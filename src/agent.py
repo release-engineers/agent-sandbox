@@ -25,39 +25,39 @@ class AgentManager:
         self.log_formatter = None
         self.project_name = Path.cwd().name
     
-    def start_agent(self, name: str, goal: str):
+    def start_agent(self, goal: str):
         """Start a new agent."""
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        unique_name = f"{name}-{timestamp}"
+        agent_id = f"agent--{timestamp}"
         
-        self.console.print(f"🚀 Starting agent [cyan]{name}[/cyan] ({unique_name})")
+        self.console.print(f"🚀 Starting agent [cyan]{agent_id}[/cyan]")
         self.console.print(f"   Goal: {goal}")
         
-        self.workspace_manager.cleanup_existing_agent(unique_name)
+        self.workspace_manager.cleanup_existing_agent(agent_id)
         
-        request_id = self.db.create_request(unique_name, self.project_name, goal)
+        request_id = self.db.create_request(agent_id, self.project_name, goal)
         
         self.log_formatter = AgentLogFormatter(self.console, self.log_manager._db, request_id)
         
         try:
-            workspace_path = self.workspace_manager.create_workspace(unique_name)
+            workspace_path = self.workspace_manager.create_workspace(agent_id)
             self.workspace_manager.setup_claude_settings(workspace_path)
             self.workspace_manager.build_images()
             self.workspace_manager.ensure_network()
-            self.workspace_manager.start_proxy_container(unique_name)
+            self.workspace_manager.start_proxy_container(agent_id)
             
             exit_code = self.workspace_manager.run_agent_container(
-                unique_name, goal, workspace_path, self.log_formatter
+                agent_id, goal, workspace_path, self.log_formatter
             )
             
-            self.diff_manager.update_agent_status(unique_name, DiffStatus.AGENT_COMPLETE, exit_code=exit_code)
+            self.diff_manager.update_agent_status(agent_id, DiffStatus.AGENT_COMPLETE, exit_code=exit_code)
             
             if exit_code == 0:
                 self.console.print("✅ Agent completed successfully")
             else:
                 self.console.print(f"❌ Agent failed with exit code: {exit_code}")
                 self.diff_manager.update_agent_status(
-                    unique_name, DiffStatus.AGENT_COMPLETE, 
+                    agent_id, DiffStatus.AGENT_COMPLETE, 
                     exit_code=exit_code, 
                     error_message=f"Agent failed with exit code {exit_code}"
                 )
@@ -65,32 +65,32 @@ class AgentManager:
         except Exception as e:
             self.console.print(f"❌ Agent failed: {e}")
             self.diff_manager.update_agent_status(
-                unique_name, DiffStatus.AGENT_COMPLETE, 
+                agent_id, DiffStatus.AGENT_COMPLETE, 
                 exit_code=-1, 
                 error_message=str(e)
             )
         finally:
-            self._cleanup_and_commit(unique_name)
+            self._cleanup_and_commit(agent_id)
     
-    def _cleanup_and_commit(self, name: str):
+    def _cleanup_and_commit(self, agent_id: str):
         """Clean up containers and generate diff."""
         self.console.print("🧹 Cleaning up and generating diff...")
         
-        self.workspace_manager.stop_containers(name)
+        self.workspace_manager.stop_containers(agent_id)
         
-        workspace_path = self.workspace_manager.worktree_dir / name
+        workspace_path = self.workspace_manager.worktree_dir / agent_id
         if workspace_path.exists():
-            self.diff_manager.generate_diff(name, workspace_path)
-            self.workspace_manager.remove_workspace(name)
+            self.diff_manager.generate_diff(agent_id, workspace_path)
+            self.workspace_manager.remove_workspace(agent_id)
         
-        self.console.print(f"✅ Agent {name} completed successfully")
+        self.console.print(f"✅ Agent {agent_id} completed successfully")
     
     def list_agents(self):
         """List agent workspaces and database records."""
         requests = self.diff_manager.list_diffs_by_project(self.project_name, limit=20)
         
         table = Table(title=f"Agent Requests for Project: {self.project_name}", show_header=True, header_style="bold cyan", box=None)
-        table.add_column("name", style="yellow", no_wrap=True)
+        table.add_column("id", style="yellow", no_wrap=True)
         table.add_column("goal", style="white")
         table.add_column("status", style="magenta")
         table.add_column("project", style="cyan")
@@ -116,16 +116,16 @@ class AgentManager:
         self.console.print(table)
         
         if requests:
-            self.console.print(f"\n[dim]To apply: ags diff <agent-name> | git apply[/dim]")
+            self.console.print(f"\n[dim]To apply: ags diff <agent-id> | git apply[/dim]")
         
         active_containers = self.workspace_manager.list_active_containers()
         if active_containers:
             self.console.print(f"\n[cyan]Active containers:[/cyan] {', '.join(active_containers)}")
     
-    def stop_agent(self, name: str):
+    def stop_agent(self, agent_id: str):
         """Stop and remove an agent (for backward compatibility)."""
-        self.console.print(f"⏹ Stopping agent: {name}")
-        self._cleanup_and_commit(name)
+        self.console.print(f"⏹ Stopping agent: {agent_id}")
+        self._cleanup_and_commit(agent_id)
     
     def cleanup_all(self):
         """Clean up all agents and resources."""
@@ -137,31 +137,31 @@ class AgentManager:
         self.console.print("   Follow the prompts to authenticate with your Claude account.")
         self.workspace_manager.run_auth_container()
     
-    def show_agent_logs(self, name: str):
+    def show_agent_logs(self, agent_id: str):
         """View logs for a specific agent."""
         self.log_formatter = AgentLogFormatter(self.console)
         
-        status = self.db.get_agent_status(name)
+        status = self.db.get_agent_status(agent_id)
         if not status:
-            self.console.print(f"[red]Agent '{name}' not found in database[/red]")
+            self.console.print(f"[red]Agent '{agent_id}' not found in database[/red]")
             return
         
-        self.console.print(f"📋 Agent: [cyan]{name}[/cyan]")
+        self.console.print(f"📋 Agent: [cyan]{agent_id}[/cyan]")
         self.console.print(f"   Goal: {status['goal']}")
         self.console.print(f"   Status: {status['diff_status']}")
         self.console.print(f"   Started: {status['started_at'] or '-'}")
         self.console.print(f"   Completed: {status['completed_at'] or '-'}")
         
-        self.log_manager.display_agent_logs(name, self.log_formatter)
+        self.log_manager.display_agent_logs(agent_id, self.log_formatter)
     
-    def show_diff(self, agent_name: str):
+    def show_diff(self, agent_id: str):
         """Show the diff content for a specific agent."""
-        diff_record = self.diff_manager.get_diff_by_agent_name(agent_name)
+        diff_record = self.diff_manager.get_diff_by_agent_name(agent_id)
         if not diff_record:
-            raise Exception(f"No diff found for agent '{agent_name}'")
+            raise Exception(f"No diff found for agent '{agent_id}'")
         
         if not diff_record['diff_content']:
-            raise Exception(f"No diff content available for agent '{agent_name}'")
+            raise Exception(f"No diff content available for agent '{agent_id}'")
         
         # Output only the diff content, nothing else
         print(diff_record['diff_content'], end='')

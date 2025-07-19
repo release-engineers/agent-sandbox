@@ -14,9 +14,8 @@ def cli():
 
 
 @cli.command()
-@click.argument("name")
 @click.argument("goal")
-def start(name: str, goal: str):
+def start(goal: str):
     """Start a new agent with a specific goal."""
     ags_dir = Path.home() / ".ags"
     ags_dir.mkdir(exist_ok=True)
@@ -24,22 +23,22 @@ def start(name: str, goal: str):
     
     manager = AgentManager(db_path)
     try:
-        manager.start_agent(name, goal)
+        manager.start_agent(goal)
     except Exception as e:
         raise click.ClickException(str(e))
 
 
 @cli.command()
-@click.argument("name")
-def stop(name: str):
-    """Stop and remove an agent."""
+@click.argument("agent_id")
+def stop(agent_id: str):
+    """Stop and remove an agent by ID."""
     ags_dir = Path.home() / ".ags"
     ags_dir.mkdir(exist_ok=True)
     db_path = str(ags_dir / "agents.db")
     
     manager = AgentManager(db_path)
     try:
-        manager.stop_agent(name)
+        manager.stop_agent(agent_id)
     except Exception as e:
         raise click.ClickException(str(e))
 
@@ -78,8 +77,8 @@ def auth():
 
 
 @cli.command()
-@click.argument("name")
-def logs(name: str):
+@click.argument("agent_id")
+def logs(agent_id: str):
     """View logs for a specific agent from the database."""
     ags_dir = Path.home() / ".ags"
     ags_dir.mkdir(exist_ok=True)
@@ -88,14 +87,14 @@ def logs(name: str):
     manager = AgentManager(db_path)
     
     try:
-        manager.show_agent_logs(name)
+        manager.show_agent_logs(agent_id)
     except Exception as e:
         raise click.ClickException(str(e))
 
 
 @cli.command()
-@click.argument("agent_name")
-def diff(agent_name: str):
+@click.argument("agent_id")
+def diff(agent_id: str):
     """Output the diff content for a specific agent."""
     ags_dir = Path.home() / ".ags"
     ags_dir.mkdir(exist_ok=True)
@@ -104,7 +103,7 @@ def diff(agent_name: str):
     manager = AgentManager(db_path)
     
     try:
-        manager.show_diff(agent_name)
+        manager.show_diff(agent_id)
     except Exception as e:
         raise click.ClickException(str(e))
 

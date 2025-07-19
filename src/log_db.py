@@ -58,11 +58,11 @@ class LogDatabase(Database):
         """, (request_id, timestamp_sql, tool_name, hook_event, 
              json.dumps(tool_input), "TOOL", raw_log))
     
-    def get_agent_logs(self, agent_name: str) -> List[Dict[str, Any]]:
+    def get_agent_logs(self, agent_id: str) -> List[Dict[str, Any]]:
         """Get all logs for an agent."""
         return self.fetch_all("""
             SELECT l.* FROM logs l
             JOIN requests r ON l.request_id = r.id
             WHERE r.agent_name = ?
             ORDER BY l.timestamp
-        """, (agent_name,))
+        """, (agent_id,))

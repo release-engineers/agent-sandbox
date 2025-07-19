@@ -36,7 +36,7 @@ class DiffDatabase(Database):
         
         self.execute("CREATE INDEX IF NOT EXISTS idx_requests_agent_name ON requests(agent_name)")
     
-    def update_request_status(self, agent_name: str, diff_status: DiffStatus, 
+    def update_request_status(self, agent_id: str, diff_status: DiffStatus, 
                             exit_code: Optional[int] = None, 
                             error_message: Optional[str] = None):
         """Update the status of an agent request."""
@@ -54,7 +54,7 @@ class DiffDatabase(Database):
             update_fields.append("error_message = ?")
             params.append(error_message)
         
-        params.append(agent_name)
+        params.append(agent_id)
         
         self.execute(f"""
             UPDATE requests 
@@ -62,13 +62,13 @@ class DiffDatabase(Database):
             WHERE agent_name = ?
         """, tuple(params))
     
-    def save_diff(self, agent_name: str, diff_content: str):
+    def save_diff(self, agent_id: str, diff_content: str):
         """Save the diff content and update status to DONE."""
         self.execute("""
             UPDATE requests 
             SET diff_content = ?, diff_status = ?
             WHERE agent_name = ?
-        """, (diff_content, DiffStatus.DONE.value, agent_name))
+        """, (diff_content, DiffStatus.DONE.value, agent_id))
     
     def list_diffs_by_project(self, project: str, limit: int = 50) -> List[Dict[str, Any]]:
         """List diffs for a specific project, or all projects if project is empty."""
@@ -89,8 +89,8 @@ class DiffDatabase(Database):
                 LIMIT ?
             """, (limit,))
     
-    def get_diff_by_agent_name(self, agent_name: str) -> Optional[Dict[str, Any]]:
-        """Get a specific diff by agent name."""
+    def get_diff_by_agent_name(self, agent_id: str) -> Optional[Dict[str, Any]]:
+        """Get a specific diff by agent ID."""
         return self.fetch_one("""
             SELECT * FROM requests WHERE agent_name = ? AND diff_status = 'DONE'
-        """, (agent_name,))
+        """, (agent_id,))

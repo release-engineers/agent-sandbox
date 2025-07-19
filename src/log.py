@@ -179,13 +179,13 @@ class LogManager:
         self._db = LogDatabase(db_path)
         self.console = Console()
     
-    def get_agent_logs(self, agent_name: str) -> List[Dict[str, Any]]:
+    def get_agent_logs(self, agent_id: str) -> List[Dict[str, Any]]:
         """Get all logs for an agent."""
-        return self._db.get_agent_logs(agent_name)
+        return self._db.get_agent_logs(agent_id)
     
-    def display_agent_logs(self, agent_name: str, formatter: AgentLogFormatter):
+    def display_agent_logs(self, agent_id: str, formatter: AgentLogFormatter):
         """Display agent logs using the formatter."""
-        logs = self.get_agent_logs(agent_name)
+        logs = self.get_agent_logs(agent_id)
         if not logs:
             self.console.print("[dim]No logs found[/dim]")
             return

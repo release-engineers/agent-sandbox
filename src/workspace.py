@@ -41,9 +41,9 @@ class WorkspaceManager:
         """Run a command and return result."""
         return subprocess.run(cmd, capture_output=True, text=True)
     
-    def cleanup_existing_agent(self, name: str):
+    def cleanup_existing_agent(self, agent_id: str):
         """Clean up any existing agent environment."""
-        for container_name in [name, f"proxy-{name}"]:
+        for container_name in [agent_id, f"proxy-{agent_id}"]:
             try:
                 container = self.docker.containers.get(container_name)
                 self.console.print(f"⏹ Stopping existing container: {container_name}")
@@ -52,14 +52,14 @@ class WorkspaceManager:
             except docker.errors.NotFound:
                 pass
         
-        workspace_path = self.worktree_dir / name
+        workspace_path = self.worktree_dir / agent_id
         if workspace_path.exists():
             self.console.print(f"🗑 Removing existing workspace: {workspace_path}")
             shutil.rmtree(workspace_path)
     
-    def create_workspace(self, name: str) -> Path:
+    def create_workspace(self, agent_id: str) -> Path:
         """Create workspace directory and clone repo."""
-        workspace_path = self.worktree_dir / name
+        workspace_path = self.worktree_dir / agent_id
         
         with self.console.status("[cyan]Creating workspace...[/cyan]", spinner="dots") as status:
             result = self._run_command([
@@ -129,25 +129,25 @@ class WorkspaceManager:
         except docker.errors.NotFound:
             self.docker.networks.create("agent-network")
     
-    def start_proxy_container(self, name: str):
+    def start_proxy_container(self, agent_id: str):
         """Start proxy container."""
         with self.console.status("[cyan]Starting proxy container...[/cyan]", spinner="dots"):
             self.docker.containers.run(
                 "claude-code-proxy",
-                name=f"proxy-{name}",
+                name=f"proxy-{agent_id}",
                 network="agent-network",
                 detach=True,
                 auto_remove=True
             )
             self.console.print("[green]✓ Proxy container started[/green]")
     
-    def run_agent_container(self, name: str, goal: str, workspace_path: Path, log_formatter) -> int:
+    def run_agent_container(self, agent_id: str, goal: str, workspace_path: Path, log_formatter) -> int:
         """Run agent container and return exit code."""
         self.console.print("🤖 Starting agent container...")
         
         temp_log_dir = None
         try:
-            temp_log_dir = tempfile.mkdtemp(prefix=f"ags-{name}-logs-")
+            temp_log_dir = tempfile.mkdtemp(prefix=f"ags-{agent_id}-logs-")
             log_dir = Path(temp_log_dir)
             log_file = log_dir / "ags.log"
             log_file.touch()
@@ -155,12 +155,12 @@ class WorkspaceManager:
             
             container = self.docker.containers.create(
                 "claude-code-agent",
-                name=name,
+                name=agent_id,
                 network="agent-network",
                 environment={
                     "CLAUDE_GOAL": goal,
-                    "HTTP_PROXY": f"http://proxy-{name}:3128",
-                    "HTTPS_PROXY": f"http://proxy-{name}:3128"
+                    "HTTP_PROXY": f"http://proxy-{agent_id}:3128",
+                    "HTTPS_PROXY": f"http://proxy-{agent_id}:3128"
                 },
                 volumes={
                     str(workspace_path): {"bind": "/workspace", "mode": "rw"},
@@ -205,9 +205,9 @@ class WorkspaceManager:
                 self.console.print(f"[dim]Cleaning up temporary log directory...[/dim]")
                 shutil.rmtree(temp_log_dir)
     
-    def stop_containers(self, name: str):
+    def stop_containers(self, agent_id: str):
         """Stop and remove containers."""
-        for container_name in [name, f"proxy-{name}"]:
+        for container_name in [agent_id, f"proxy-{agent_id}"]:
             try:
                 container = self.docker.containers.get(container_name)
                 container.stop()
@@ -215,9 +215,9 @@ class WorkspaceManager:
             except docker.errors.NotFound:
                 pass
     
-    def remove_workspace(self, name: str):
+    def remove_workspace(self, agent_id: str):
         """Remove workspace directory."""
-        workspace_path = self.worktree_dir / name
+        workspace_path = self.worktree_dir / agent_id
         if workspace_path.exists():
             self.console.print(f"🗑 Removing workspace: {workspace_path}")
             shutil.rmtree(workspace_path)

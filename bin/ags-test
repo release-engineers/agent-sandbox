@@ -12,13 +12,10 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_DIR/example"
 source "$PROJECT_DIR/venv/bin/activate"
 
-# Clean up any existing test-fix resources before running
-echo "Cleaning up existing test-fix resources..."
-git worktree remove --force "$PROJECT_DIR/worktrees/test-fix" 2>/dev/null || true
-rm -rf "$PROJECT_DIR/worktrees/test-fix" 2>/dev/null || true
-git branch -D agent--test-fix 2>/dev/null || true
-git worktree prune 2>/dev/null || true
+# Clean up any existing agent resources before running
+echo "Cleaning up existing agent resources..."
+rm -rf "$PROJECT_DIR/worktrees/agent--"* 2>/dev/null || true
 
 # Set PYTHONPATH and run agent with simple test task
 export PYTHONPATH="$PROJECT_DIR:$PYTHONPATH"
-exec python -m src.main start test-fix "Write a simple hello world Go program."
+exec python -m src.main start "Write a simple hello world Go program."

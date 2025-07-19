@@ -28,21 +28,21 @@ class AgentDatabase(Database):
         
         self.execute("CREATE INDEX IF NOT EXISTS idx_requests_agent_name ON requests(agent_name)")
     
-    def create_request(self, agent_name: str, project: str, goal: str) -> int:
+    def create_request(self, agent_id: str, project: str, goal: str) -> int:
         """Create a new agent request."""
         return self.execute("""
             INSERT INTO requests (agent_name, project, goal, started_at, diff_status)
             VALUES (?, ?, ?, CURRENT_TIMESTAMP, 'AGENT_RUNNING')
-        """, (agent_name, project, goal))
+        """, (agent_id, project, goal))
     
-    def get_request_id(self, agent_name: str) -> Optional[int]:
+    def get_request_id(self, agent_id: str) -> Optional[int]:
         """Get the request ID for an agent."""
-        result = self.fetch_one("SELECT id FROM requests WHERE agent_name = ?", (agent_name,))
+        result = self.fetch_one("SELECT id FROM requests WHERE agent_name = ?", (agent_id,))
         return result['id'] if result else None
     
-    def get_agent_status(self, agent_name: str) -> Optional[Dict[str, Any]]:
+    def get_agent_status(self, agent_id: str) -> Optional[Dict[str, Any]]:
         """Get the current status of an agent."""
-        return self.fetch_one("SELECT * FROM requests WHERE agent_name = ?", (agent_name,))
+        return self.fetch_one("SELECT * FROM requests WHERE agent_name = ?", (agent_id,))
     
     def list_requests(self, limit: int = 50) -> List[Dict[str, Any]]:
         """List recent agent requests."""
