@@ -60,7 +60,7 @@ docker run -it --rm -v claude-code-credentials:/home/node/.claude node:20 claude
 2. **Builds Docker Images**: Agent container + proxy container
 3. **Configures Security**: Sets up hooks and network restrictions
 4. **Runs Claude Code**: Executes with your goal, streams output
-5. **Commits Changes**: Automatically commits to `agent--<name>` branch
+5. **Stores Diffs**: Records changes in database for review and application
 
 ## Architecture
 
@@ -108,7 +108,6 @@ docker exec -it <agent-name> /bin/bash
 docker logs proxy-<agent-name>
 
 # Force cleanup
-docker stop $(docker ps -q --filter "label=ags")
 ags cleanup
 ```
 
