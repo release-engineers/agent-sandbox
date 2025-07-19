@@ -95,8 +95,8 @@ def logs(name: str):
 
 @cli.command()
 @click.argument("agent_name")
-def apply(agent_name: str):
-    """Apply a specific diff by agent name."""
+def diff(agent_name: str):
+    """Output the diff content for a specific agent."""
     ags_dir = Path.home() / ".ags"
     ags_dir.mkdir(exist_ok=True)
     db_path = str(ags_dir / "agents.db")
@@ -104,7 +104,7 @@ def apply(agent_name: str):
     manager = AgentManager(db_path)
     
     try:
-        manager.apply_diff(agent_name)
+        manager.show_diff(agent_name)
     except Exception as e:
         raise click.ClickException(str(e))
 

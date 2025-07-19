@@ -89,12 +89,12 @@ class AgentManager:
         """List agent workspaces and database records."""
         requests = self.diff_manager.list_diffs_by_project(self.project_name, limit=20)
         
-        table = Table(title=f"Agent Requests for Project: {self.project_name}", show_header=True, header_style="bold cyan")
-        table.add_column("Name", style="yellow")
-        table.add_column("Goal", style="white", max_width=40)
-        table.add_column("Status", style="magenta")
-        table.add_column("Project", style="cyan")
-        table.add_column("Timestamp", style="green")
+        table = Table(title=f"Agent Requests for Project: {self.project_name}", show_header=True, header_style="bold cyan", box=None)
+        table.add_column("name", style="yellow", no_wrap=True)
+        table.add_column("goal", style="white")
+        table.add_column("status", style="magenta")
+        table.add_column("project", style="cyan")
+        table.add_column("timestamp", style="green")
         
         if not requests:
             self.console.print(table)
@@ -105,13 +105,9 @@ class AgentManager:
             started = req['started_at'] if req['started_at'] else None
             most_recent = completed if completed else started if started else '-'
             
-            goal = req['goal']
-            if len(goal) > 40:
-                goal = goal[:37] + "..."
-            
             table.add_row(
                 req['agent_name'],
-                goal,
+                req['goal'],
                 req['diff_status'],
                 req['project'],
                 most_recent
@@ -120,7 +116,7 @@ class AgentManager:
         self.console.print(table)
         
         if requests:
-            self.console.print(f"\n[dim]Use 'ags apply <agent-name>' to apply a specific diff[/dim]")
+            self.console.print(f"\n[dim]To apply: ags diff <agent-name> | git apply[/dim]")
         
         active_containers = self.workspace_manager.list_active_containers()
         if active_containers:
@@ -158,21 +154,14 @@ class AgentManager:
         
         self.log_manager.display_agent_logs(name, self.log_formatter)
     
-    def apply_diff(self, agent_name: str):
-        """Apply a specific diff by agent name."""
+    def show_diff(self, agent_name: str):
+        """Show the diff content for a specific agent."""
         diff_record = self.diff_manager.get_diff_by_agent_name(agent_name)
         if not diff_record:
-            self.console.print(f"[red]No diff found for agent '{agent_name}'[/red]")
-            return
+            raise Exception(f"No diff found for agent '{agent_name}'")
         
         if not diff_record['diff_content']:
-            self.console.print(f"[red]No diff content available for agent '{agent_name}'[/red]")
-            return
+            raise Exception(f"No diff content available for agent '{agent_name}'")
         
-        self.console.print(f"📄 Applying diff for [cyan]{diff_record['agent_name']}[/cyan]")
-        self.console.print(f"   Project: {diff_record['project']}")
-        self.console.print(f"   Goal: {diff_record['goal']}")
-        self.console.print(f"   Completed: {diff_record['completed_at'] or '-'}")
-        
-        if not self.diff_manager.apply_diff(agent_name):
-            self.console.print(f"[red]Failed to apply diff for agent '{agent_name}'[/red]")
+        # Output only the diff content, nothing else
+        print(diff_record['diff_content'], end='')
