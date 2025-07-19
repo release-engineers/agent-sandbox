@@ -56,7 +56,7 @@ class AgentLogFormatter:
         if not line.strip():
             return
             
-        # Try to parse as JSON first (new format)
+        # Try to parse as JSON first
         try:
             log_data = json.loads(line.strip())
             self._format_json_log(log_data)
@@ -64,15 +64,11 @@ class AgentLogFormatter:
         except json.JSONDecodeError:
             pass
             
-        # Handle legacy [LOG] prefixed lines from hooks
-        if line.startswith('[LOG]'):
-            self._format_legacy_log(line)
-        else:
-            # Regular output from the agent
-            self.console.print(line)
+        # Regular output from the agent
+        self.console.print(line)
     
     def _format_json_log(self, log_data: dict):
-        """Format JSON log data."""
+        """Format JSON log data into simple timestamp + content format."""
         timestamp = log_data.get('timestamp', '')
         tool_name = log_data.get('tool_name', 'unknown')
         hook_event = log_data.get('hook_event_name', 'unknown')
@@ -81,21 +77,15 @@ class AgentLogFormatter:
         # Format timestamp
         try:
             dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-            time_str = dt.strftime('%H:%M:%S')
+            time_str = dt.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]  # Include milliseconds
         except:
-            time_str = timestamp[:8] if len(timestamp) >= 8 else timestamp
-        
-        # Get color and icon for tool
-        color = self.tool_colors.get(tool_name, 'white')
-        icon = self.tool_icons.get(tool_name, '🔧')
+            time_str = timestamp
         
         # Format details based on tool type
         details = self._format_tool_details(tool_name, tool_input)
         
-        # Print formatted output
-        self.console.print(
-            f"[dim]{time_str}[/dim] {icon} [{color}]{tool_name}[/{color}] {details}"
-        )
+        # Print in simple format: [timestamp] event: tool - details
+        self.console.print(f"[{time_str}] {hook_event}: {tool_name} - {details}")
     
     def _format_tool_details(self, tool_name: str, tool_input: dict) -> str:
         """Format tool-specific details."""
@@ -163,34 +153,4 @@ class AgentLogFormatter:
     
     def _shorten_path(self, path: str) -> str:
         """Shorten long paths for display."""
-        return path.replace('/workspace/', '') if path.startswith('/workspace/') else path
-    
-    def _format_legacy_log(self, line: str):
-        """Format legacy [LOG] prefixed lines (for backward compatibility)."""
-        # Remove the [LOG] prefix
-        line = line[5:].strip()
-        
-        # Parse timestamp if present
-        timestamp_match = re.match(r'\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\]\s*(.*)', line)
-        if timestamp_match:
-            timestamp, content = timestamp_match.groups()
-            
-            # Parse the hook event and tool
-            event_match = re.match(r'(\w+):\s*(\w+)\s*-\s*(.*)', content)
-            if event_match:
-                event, tool, details = event_match.groups()
-                
-                color = self.tool_colors.get(tool, 'white')
-                icon = self.tool_icons.get(tool, '🔧')
-                
-                # Format the output
-                time_str = datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S.%f').strftime('%H:%M:%S')
-                self.console.print(
-                    f"[dim]{time_str}[/dim] {icon} [{color}]{tool}[/{color}] {details}"
-                )
-            else:
-                # Fallback formatting
-                self.console.print(f"[dim]{timestamp}[/dim] {content}")
-        else:
-            # No timestamp, just print the content
-            self.console.print(f"[yellow]{line}[/yellow]") 
+        return path.replace('/workspace/', '') if path.startswith('/workspace/') else path 

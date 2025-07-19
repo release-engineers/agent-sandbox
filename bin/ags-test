@@ -14,8 +14,10 @@ source "$PROJECT_DIR/venv/bin/activate"
 
 # Clean up any existing test-fix resources before running
 echo "Cleaning up existing test-fix resources..."
-git branch -D agent--test-fix 2>/dev/null || true
+git worktree remove --force "$PROJECT_DIR/worktrees/test-fix" 2>/dev/null || true
 rm -rf "$PROJECT_DIR/worktrees/test-fix" 2>/dev/null || true
+git branch -D agent--test-fix 2>/dev/null || true
+git worktree prune 2>/dev/null || true
 
 # Run agent with simple test task
 exec "$PROJECT_DIR/agent.py" start test-fix "Write a simple hello world Go program."
