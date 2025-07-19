@@ -39,22 +39,17 @@ export PATH="$(pwd)/bin:$PATH"
 ### Basic Usage
 
 ```bash
-# Authenticate Claude Code (first time only)
-ags auth
-
-# Launch interactive TUI (recommended)
+# Launch the TUI interface
 ags
-# or explicitly: ags tui
 
 # In the TUI:
 # - Type your goal and press Enter to start an agent
 # - Use :d to view diffs, :r to restart agents
+# - Use :c to cleanup agents
 # - Press :q to quit
 
-# CLI commands (legacy)
-ags start "Add authentication to the user API"
-ags list
-ags cleanup
+# Authenticate Claude Code when prompted, or use:
+# docker run -it --rm -v claude-code-credentials:/home/node/.claude node:20 claude auth
 ```
 
 ## How It Works
@@ -86,13 +81,12 @@ ags cleanup
 - **Hook Validation**: Pre/post action validation
 - **No Host Access**: Containers can't access host system
 
-## Interface Options
+## Terminal User Interface
 
-### TUI (Recommended)
-The interactive Terminal User Interface provides the best experience:
+The interactive Terminal User Interface provides a modern agent management experience:
 
 ```bash
-ags  # Launch TUI (default)
+ags  # Launch TUI
 ```
 
 **TUI Features:**
@@ -112,18 +106,6 @@ ags  # Launch TUI (default)
 - `Ctrl+C` - Clear input
 - `↑/↓` - Navigate table (when input empty or starts with `:`)
 
-### CLI Commands (Legacy)
-
-| Command | Description |
-|---------|-------------|
-| `ags tui` | Launch interactive TUI |
-| `ags start "<goal>"` | Start new agent with goal |
-| `ags list` | Show agent records with status |
-| `ags logs <name>` | View logs for specific agent |
-| `ags diff <name>` | Output diff content for piping |
-| `ags cleanup` | Remove all agents |
-| `ags auth` | Authenticate Claude Code |
-
 ## Examples
 
 ### TUI Workflow
@@ -137,25 +119,6 @@ ags
 # 3. When done, press Enter (empty input) to view diff
 # 4. Use :r to restart if needed
 # 5. Use :c to cleanup when satisfied
-```
-
-### CLI Workflow (Legacy)
-```bash
-# Add tests to a module
-ags start "Write unit tests for the auth module"
-
-# Fix a bug  
-ags start "Fix the memory leak in the worker process"
-
-# View agent history
-ags list                           # Show all agents with status
-ags diff agent--20240122-143022    # Output diff for piping
-ags diff agent--20240122-143022 | git apply  # Apply changes
-
-# Multiple agents in parallel
-ags start "Update React components to use hooks"
-ags start "Add rate limiting to API endpoints" 
-ags start "Generate API documentation"
 ```
 
 ## Configuration

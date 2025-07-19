@@ -4,8 +4,6 @@
 from datetime import datetime
 from pathlib import Path
 from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
 
 from .agent_db import AgentDatabase
 from .diff import DiffManager, DiffStatus
@@ -85,60 +83,12 @@ class AgentManager:
         
         self.console.print(f"✅ Agent {agent_id} completed successfully")
     
-    def list_agents(self):
-        """List agent workspaces and database records."""
-        # Get all agent requests from the database
-        all_requests = self.db.list_requests(limit=50)
-        # Filter by current project
-        requests = [req for req in all_requests if req.get('project') == self.project_name]
-        
-        table = Table(title=f"Agent Requests for Project: {self.project_name}", show_header=True, header_style="bold cyan", box=None)
-        table.add_column("id", style="yellow", no_wrap=True)
-        table.add_column("goal", style="white")
-        table.add_column("status", style="magenta")
-        table.add_column("project", style="cyan")
-        table.add_column("timestamp", style="green")
-        
-        if not requests:
-            self.console.print(table)
-            return
-        
-        for req in requests:
-            completed = req['completed_at'] if req['completed_at'] else None
-            started = req['started_at'] if req['started_at'] else None
-            most_recent = completed if completed else started if started else '-'
-            
-            table.add_row(
-                req['agent_name'],
-                req['goal'],
-                req['diff_status'],
-                req['project'],
-                most_recent
-            )
-        
-        self.console.print(table)
-        
-        if requests:
-            self.console.print(f"\n[dim]To apply: ags diff <agent-id> | git apply[/dim]")
-        
-        active_containers = self.workspace_manager.list_active_containers()
-        if active_containers:
-            self.console.print(f"\n[cyan]Active containers:[/cyan] {', '.join(active_containers)}")
     
-    def stop_agent(self, agent_id: str):
-        """Stop and remove an agent (for backward compatibility)."""
-        self.console.print(f"⏹ Stopping agent: {agent_id}")
-        self._cleanup_and_commit(agent_id)
     
     def cleanup_all(self):
         """Clean up all agents and resources."""
         self.workspace_manager.cleanup_all()
     
-    def auth(self):
-        """Run Claude Code authentication."""
-        self.console.print("🔐 Starting Claude Code authentication...")
-        self.console.print("   Follow the prompts to authenticate with your Claude account.")
-        self.workspace_manager.run_auth_container()
     
     def show_agent_logs(self, agent_id: str):
         """View logs for a specific agent."""
@@ -157,17 +107,6 @@ class AgentManager:
         
         self.log_manager.display_agent_logs(agent_id, self.log_formatter)
     
-    def show_diff(self, agent_id: str):
-        """Show the diff content for a specific agent."""
-        diff_record = self.diff_manager.get_diff_by_agent_name(agent_id)
-        if not diff_record:
-            raise Exception(f"No diff found for agent '{agent_id}'")
-        
-        if not diff_record['diff_content']:
-            raise Exception(f"No diff content available for agent '{agent_id}'")
-        
-        # Output only the diff content, nothing else
-        print(diff_record['diff_content'], end='')
     
     def get_diff(self, agent_name: str) -> Optional[str]:
         """Get diff content for an agent."""

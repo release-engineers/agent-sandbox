@@ -46,12 +46,9 @@ Main orchestration class with database integration:
 - `__init__(db_path)`: Initializes with database path, sets up all managers
 - `start_agent(goal)`: Creates unique timestamped agent, manages full workflow
 - `restart_agent(agent_name)`: Restart existing agent with same goal and reset status
-- `list_agents()`: Shows agent records from database with rich formatting
 - `cleanup_all()`: Removes all agents and resources
-- `auth()`: Runs Claude Code authentication
 - `show_agent_logs(name)`: Display logs for specific agent
-- `show_diff(agent_name)`: Output diff content for CLI piping
-- `get_diff(agent_name)`: Get diff content for TUI display
+- `get_diff(agent_name)`: Get diff content for agent
 
 #### WorkspaceManager (`src/workspace.py`)
 Git worktree and Docker container management:
@@ -182,16 +179,14 @@ agent-process/
 }
 ```
 
-## User Interfaces
+## User Interface
 
 ### Terminal User Interface (TUI)
-Agent Sandbox includes a modern TUI built with Textual for interactive agent management:
+Agent Sandbox provides a modern TUI built with Textual for interactive agent management:
 
 #### Starting the TUI
 ```bash
-ags tui
-# or
-ags  # TUI is the default interface
+ags  # Launch the TUI interface
 ```
 
 #### TUI Features
@@ -222,23 +217,12 @@ ags  # TUI is the default interface
 - **Up/Down arrows**: Navigate table when input empty or starts with ":"
 - **Escape**: Close diff viewer or other modals
 
-### CLI Commands (Legacy)
-
-#### Primary Commands
-- `ags start "<goal>"`: Create and run agent with unique timestamped name
-- `ags list`: Show agent records from database with rich formatting
-- `ags cleanup`: Remove all agents and resources
-- `ags auth`: Authenticate with Claude Code
-- `ags logs <name>`: View stored logs for specific agent
-- `ags diff <agent_name>`: Output diff content for piping to git apply
-
-#### Implementation Details
-- **Click framework**: Command-line interface in `src/main.py`
-- **Rich formatting**: Colorized output with progress indicators
+### Implementation Details
+- **Textual framework**: Modern TUI built with Textual library
+- **Real-time updates**: Auto-refreshing interface with background processing
 - **Database persistence**: All operations tracked in `~/.ags/agents.db`
-- **Error handling**: ClickException for user-friendly errors
-- **Real-time output**: Streams container logs to terminal and database
-- **Exit codes**: Proper status code handling
+- **Error handling**: User-friendly notifications and error display
+- **Threaded execution**: Non-blocking agent execution with progress monitoring
 
 ## Resource Management
 
