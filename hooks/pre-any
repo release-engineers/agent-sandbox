@@ -6,9 +6,9 @@ json_input=$(cat)
 # Ensure log directory exists
 mkdir -p /var/log
 
-# Add timestamp to the JSON and write it to the log file
+# Add timestamp to the JSON and write it to the log file (compact format)
 timestamp=$(date -u -Iseconds)
-echo "$json_input" | jq --arg ts "$timestamp" '. + {timestamp: $ts}' >> /var/log/ags.log
+echo "$json_input" | jq -c --arg ts "$timestamp" '. + {timestamp: $ts}' >> /var/log/ags.log
 
 # Always approve (exit 0)
 exit 0

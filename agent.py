@@ -239,8 +239,8 @@ Important: After you complete your work, commit all of it in one large commit. R
             # Also stream regular container logs
             for line in container.logs(stream=True, follow=True):
                 decoded_line = line.decode('utf-8', errors='ignore').rstrip()
-                if decoded_line and not decoded_line.startswith('[LOG]'):
-                    self.console.print(f"[dim]{decoded_line}[/dim]")
+                if decoded_line:
+                    self.log_formatter.format_log_line(decoded_line)
             
             # Wait for completion
             result = container.wait()
