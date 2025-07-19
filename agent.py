@@ -72,19 +72,11 @@ class AgentManager:
             except docker.errors.NotFound:
                 pass
         
-        # Remove existing worktree
-        worktree_path = self.worktree_dir / name
-        if worktree_path.exists():
-            self.console.print(f"[yellow]🗑  Removing existing worktree:[/yellow] {worktree_path}")
-            # Force remove the worktree
-            self._run_command(["git", "worktree", "remove", "--force", str(worktree_path)])
-        
-        # Check if branch exists and delete it
-        branch_name = f"agent--{name}"
-        result = self._run_command(["git", "branch", "--list", branch_name])
-        if result.stdout.strip():
-            self.console.print(f"[yellow]🔀 Deleting existing branch:[/yellow] {branch_name}")
-            self._run_command(["git", "branch", "-D", branch_name])
+        # Remove existing workspace
+        workspace_path = self.worktree_dir / name
+        if workspace_path.exists():
+            self.console.print(f"[yellow]🗑  Removing existing workspace:[/yellow] {workspace_path}")
+            shutil.rmtree(workspace_path)
     
     def start_agent(self, name: str, goal: str):
         """Start a new agent."""
@@ -97,19 +89,20 @@ class AgentManager:
         # Clean up any existing environment for this name
         self._cleanup_existing_agent(name)
         
-        # Create worktree
-        worktree_path = self.worktree_dir / name
+        # Create workspace directory
+        workspace_path = self.worktree_dir / name
         
-        with self.console.status("[cyan]Creating worktree...[/cyan]", spinner="dots") as status:
+        with self.console.status("[cyan]Creating workspace...[/cyan]", spinner="dots") as status:
+            # Clone the current repo to workspace
             result = self._run_command([
-                "git", "worktree", "add", str(worktree_path), "-b", f"agent--{name}"
+                "git", "clone", str(self.git_root), str(workspace_path)
             ])
             if result.returncode != 0:
-                raise click.ClickException(f"Failed to create worktree: {result.stderr}")
-            status.update("[green]✓ Worktree created[/green]")
+                raise click.ClickException(f"Failed to clone repo: {result.stderr}")
+            status.update("[green]✓ Workspace created[/green]")
         
         # Setup Claude settings
-        claude_dir = worktree_path / ".claude"
+        claude_dir = workspace_path / ".claude"
         claude_dir.mkdir(exist_ok=True)
         
         settings = {
@@ -187,10 +180,7 @@ class AgentManager:
             log_file.touch()
             self.console.print(f"[dim]Log directory: {log_dir}[/dim]")
             
-            # Add GOAL amendment with completion instructions
-            goal_amendment = goal + """
 
-Important: After you complete your work, commit all of it in one large commit. Run git status and similar tools beforehand to ensure you do not commit any files accidentally. If you happen to have documented your plans in a file in the workspace, remove these files too."""
 
             # Create and start container to properly stream output
             container = self.docker.containers.create(
@@ -198,12 +188,12 @@ Important: After you complete your work, commit all of it in one large commit. R
                 name=name,
                 network="agent-network",
                 environment={
-                    "CLAUDE_GOAL": goal_amendment,
+                    "CLAUDE_GOAL": goal,
                     "HTTP_PROXY": f"http://proxy-{name}:3128",
                     "HTTPS_PROXY": f"http://proxy-{name}:3128"
                 },
                 volumes={
-                    str(worktree_path): {"bind": "/workspace", "mode": "rw"},
+                    str(workspace_path): {"bind": "/workspace", "mode": "rw"},
                     "claude-code-credentials": {"bind": "/home/node/.claude", "mode": "rw"},
                     str(log_dir): {"bind": "/var/log", "mode": "rw"}
                 },
@@ -261,8 +251,8 @@ Important: After you complete your work, commit all of it in one large commit. R
         self._cleanup_and_commit(name)
         
     def _cleanup_and_commit(self, name: str):
-        """Clean up containers and commit changes."""
-        self.console.print("\n[bold]🧿 Cleaning up and committing changes...[/bold]")
+        """Clean up containers and generate diff."""
+        self.console.print("\n[bold]🧿 Cleaning up and generating diff...[/bold]")
         
         # Stop containers (they may already be removed due to auto_remove=True)
         for container_name in [name, f"proxy-{name}"]:
@@ -274,59 +264,63 @@ Important: After you complete your work, commit all of it in one large commit. R
                 # Container already removed (auto_remove=True)
                 pass
         
-        # Handle worktree changes
-        worktree_path = self.worktree_dir / name
-        if worktree_path.exists():
-            # Stage all changes
-            self._run_command(["git", "-C", str(worktree_path), "add", "."])
+        # Generate diff before removing workspace
+        workspace_path = self.worktree_dir / name
+        if workspace_path.exists():
+            self._generate_diff(name, workspace_path)
             
-            # Commit changes
-            commit_result = self._run_command([
-                "git", "-C", str(worktree_path), "commit", "-m", 
-                f"Agent {name} changes\n\nAutomatically committed by agent-process"
-            ])
-            
-            # Show what happened
-            if commit_result.stdout:
-                self.console.print(Panel(
-                    commit_result.stdout,
-                    title="Git Commit Output",
-                    border_style="green"
-                ))
-            if commit_result.stderr and commit_result.returncode != 0:
-                self.console.print(Panel(
-                    commit_result.stderr,
-                    title="Git Commit Error",
-                    border_style="red"
-                ))
-            
-            # Remove worktree
-            self._run_command(["git", "worktree", "remove", str(worktree_path)])
-            self.console.print(f"[green]✓ Removed worktree[/green]")
+            self.console.print(f"[yellow]🗑  Removing workspace:[/yellow] {workspace_path}")
+            shutil.rmtree(workspace_path)
         
         self.console.print(f"\n[bold green]🎉 Agent {name} completed successfully[/bold green]")
+    
+    def _generate_diff(self, name: str, workspace_path: Path):
+        """Generate a diff of agent changes."""
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            diff_filename = f"agent-{name}-{timestamp}.diff"
+            diff_path = self.git_root / diff_filename
+            
+            result = self._run_command(["git", "-C", str(workspace_path), "diff", "HEAD"])
+            
+            if result.stdout.strip():
+                with open(diff_path, "w") as f:
+                    f.write(result.stdout)
+                
+                self.console.print(f"[green]📄 Generated diff:[/green] {diff_path}")
+                self.console.print(f"[dim]Apply with: git apply {diff_path}[/dim]")
+            else:
+                self.console.print("[dim]No changes detected[/dim]")
+                
+        except Exception as e:
+            self.console.print(f"[red]⚠️  Failed to generate diff: {e}[/red]")
         
     def list_agents(self):
-        """List agent branches."""
-        table = Table(title="Agent Branches", show_header=True, header_style="bold cyan")
-        table.add_column("Branch Name", style="yellow")
-        table.add_column("Agent Name", style="white")
+        """List agent workspaces."""
+        table = Table(title="Agent Workspaces", show_header=True, header_style="bold cyan")
+        table.add_column("Workspace", style="yellow")
+        table.add_column("Status", style="white")
         
-        # Get agent branches
-        result = self._run_command(["git", "branch"])
-        agent_branches = []
-        for line in result.stdout.strip().split("\n"):
-            branch = line.strip().lstrip("* ")
-            if branch.startswith("agent--"):
-                agent_branches.append(branch)
+        # Get workspace directories
+        if not self.worktree_dir.exists():
+            self.console.print("[dim]No workspaces found[/dim]")
+            return
+            
+        workspaces = [d for d in self.worktree_dir.iterdir() if d.is_dir()]
         
-        if not agent_branches:
-            self.console.print("[dim]No agent branches found[/dim]")
+        if not workspaces:
+            self.console.print("[dim]No workspaces found[/dim]")
             return
         
-        for branch in sorted(agent_branches):
-            agent_name = branch.replace("agent--", "")
-            table.add_row(branch, agent_name)
+        for workspace in sorted(workspaces):
+            # Check if container is running
+            try:
+                container = self.docker.containers.get(workspace.name)
+                status = "running" if container.status == "running" else "stopped"
+            except docker.errors.NotFound:
+                status = "idle"
+            
+            table.add_row(workspace.name, status)
         
         self.console.print(table)
             
@@ -354,34 +348,11 @@ Important: After you complete your work, commit all of it in one large commit. R
         except docker.errors.NotFound:
             pass
         
-        # First, force remove all worktrees
-        result = self._run_command(["git", "worktree", "list", "--porcelain"])
-        worktree_paths = []
-        for line in result.stdout.strip().split("\n"):
-            if line.startswith("worktree ") and "/worktrees/" in line:
-                path = line.replace("worktree ", "").strip()
-                worktree_paths.append(path)
-        
-        for path in worktree_paths:
-            self.console.print(f"[yellow]🗑  Force removing worktree:[/yellow] {path}")
-            # Use --force to ensure removal even if there are uncommitted changes
-            remove_result = self._run_command(["git", "worktree", "remove", "--force", path])
-            if remove_result.returncode != 0:
-                self.console.print(f"[red]  ⚠️  Warning: {remove_result.stderr}[/red]")
-        
-        # Run prune to clean up any stale worktree references
-        self.console.print("[cyan]🌳 Pruning stale worktree references...[/cyan]")
-        self._run_command(["git", "worktree", "prune"])
-        
-        # Now delete agent branches
-        result = self._run_command(["git", "branch"])
-        for line in result.stdout.strip().split("\n"):
-            branch = line.strip().lstrip("* ")  # Remove current branch indicator
-            if branch.startswith("agent--") or branch.startswith("test-"):
-                self.console.print(f"[yellow]🔀 Deleting branch:[/yellow] {branch}")
-                delete_result = self._run_command(["git", "branch", "-D", branch])
-                if delete_result.returncode != 0:
-                    self.console.print(f"[red]  ⚠️  Warning: {delete_result.stderr}[/red]")
+        # Remove all workspace directories
+        if self.worktree_dir.exists():
+            self.console.print(f"[yellow]🗑  Removing all workspaces:[/yellow] {self.worktree_dir}")
+            shutil.rmtree(self.worktree_dir)
+            self.worktree_dir.mkdir(exist_ok=True)
         
         self.console.print("\n[bold green]✅ Cleanup completed[/bold green]")
     
