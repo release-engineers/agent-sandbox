@@ -4,11 +4,13 @@ Run Claude Code AI agents in isolated Docker containers with network restriction
 
 ## What It Does
 
-AGS creates secure, isolated environments for Claude Code agents to:
-- Work in separate git worktrees with dedicated branches
-- Run inside Docker containers with network whitelisting
-- Execute specific tasks without affecting your main codebase
-- Automatically commit their changes to feature branches
+AGS creates secure, isolated environments for Claude Code agents with:
+- **Interactive TUI**: Modern terminal interface with real-time monitoring
+- **Vim-style commands**: Intuitive `:quit`, `:diff`, `:restart` workflow
+- **Git worktrees**: Isolated workspaces with dedicated branches
+- **Docker containers**: Sandboxed execution with network whitelisting
+- **Diff viewer**: Fullscreen syntax-highlighted code review
+- **Agent restart**: Re-run agents with the same goals
 
 ## Quick Start
 
@@ -40,16 +42,18 @@ export PATH="$(pwd)/bin:$PATH"
 # Authenticate Claude Code (first time only)
 ags auth
 
-# Start an agent
-ags start feature-x "Add authentication to the user API"
+# Launch interactive TUI (recommended)
+ags
+# or explicitly: ags tui
 
-# List agent branches
+# In the TUI:
+# - Type your goal and press Enter to start an agent
+# - Use :d to view diffs, :r to restart agents
+# - Press :q to quit
+
+# CLI commands (legacy)
+ags start "Add authentication to the user API"
 ags list
-
-# Stop a running agent (if needed)
-ags stop feature-x
-
-# Clean up all agents
 ags cleanup
 ```
 
@@ -82,39 +86,76 @@ ags cleanup
 - **Hook Validation**: Pre/post action validation
 - **No Host Access**: Containers can't access host system
 
-## Commands
+## Interface Options
+
+### TUI (Recommended)
+The interactive Terminal User Interface provides the best experience:
+
+```bash
+ags  # Launch TUI (default)
+```
+
+**TUI Features:**
+- **Real-time monitoring**: Auto-refreshing agent status table
+- **Vim-style commands**: `:quit`, `:diff`, `:restart`, `:cleanup`
+- **Fullscreen diff viewer**: Syntax-highlighted git diffs with scrolling
+- **Seamless interaction**: Type anywhere to enter goals, arrows to navigate
+- **Agent restart**: Re-run existing agents with same goals
+- **Status indicators**: Color-coded agent states (running, done, failed)
+
+**TUI Shortcuts:**
+- `Enter` - Start agent (or view diff if input empty)
+- `:d` - View diff for selected agent
+- `:r` - Restart selected agent  
+- `:c` - Clean up all agents
+- `:q` - Quit
+- `Ctrl+C` - Clear input
+- `↑/↓` - Navigate table (when input empty or starts with `:`)
+
+### CLI Commands (Legacy)
 
 | Command | Description |
 |---------|-------------|
-| `ags start <name> "<goal>"` | Start new agent with goal |
+| `ags tui` | Launch interactive TUI |
+| `ags start "<goal>"` | Start new agent with goal |
 | `ags list` | Show agent records with status |
 | `ags logs <name>` | View logs for specific agent |
-| `ags apply <name>` | Apply stored diff from agent |
-| `ags stop <name>` | Stop running agent |
+| `ags diff <name>` | Output diff content for piping |
 | `ags cleanup` | Remove all agents |
 | `ags auth` | Authenticate Claude Code |
 
 ## Examples
 
+### TUI Workflow
+```bash
+# Launch TUI
+ags
+
+# In TUI:
+# 1. Type: "Write unit tests for the auth module" → Enter
+# 2. Watch agent execute in real-time
+# 3. When done, press Enter (empty input) to view diff
+# 4. Use :r to restart if needed
+# 5. Use :c to cleanup when satisfied
+```
+
+### CLI Workflow (Legacy)
 ```bash
 # Add tests to a module
-ags start add-tests "Write unit tests for the auth module"
+ags start "Write unit tests for the auth module"
 
-# Fix a bug
-ags start fix-bug "Fix the memory leak in the worker process"
+# Fix a bug  
+ags start "Fix the memory leak in the worker process"
 
-# Refactor code
-ags start refactor "Refactor database queries to use prepared statements"
-
-# View agent history and apply changes
-ags list                           # Show completed agents
-ags logs add-tests-20240122-143022 # View specific agent logs  
-ags apply add-tests-20240122-143022 # Apply the agent's changes
+# View agent history
+ags list                           # Show all agents with status
+ags diff agent--20240122-143022    # Output diff for piping
+ags diff agent--20240122-143022 | git apply  # Apply changes
 
 # Multiple agents in parallel
-ags start frontend "Update React components to use hooks"
-ags start backend "Add rate limiting to API endpoints"
-ags start docs "Generate API documentation"
+ags start "Update React components to use hooks"
+ags start "Add rate limiting to API endpoints" 
+ags start "Generate API documentation"
 ```
 
 ## Configuration
@@ -162,7 +203,9 @@ agent-process/
 │   ├── workspace.py      # Git/Docker management
 │   ├── diff.py           # Diff operations
 │   ├── log.py            # Log formatting
-│   └── *_db.py           # Database modules
+│   ├── *_db.py           # Database modules
+│   └── tui/              # Terminal User Interface
+│       └── app.py        # Textual-based TUI
 ├── requirements.txt       # Dependencies (click, docker, rich)
 ├── bin/
 │   ├── ags               # CLI wrapper

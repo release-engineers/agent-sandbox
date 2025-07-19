@@ -36,9 +36,6 @@ class DiffDatabase(Database):
         """)
         
         self.execute("CREATE INDEX IF NOT EXISTS idx_requests_agent_name ON requests(agent_name)")
-        
-        # Migrate existing DONE entries with empty/null diff_content to DONE_AND_NONE
-        self._migrate_empty_diffs()
     
     def update_request_status(self, agent_id: str, diff_status: DiffStatus, 
                             exit_code: Optional[int] = None, 
@@ -82,12 +79,3 @@ class DiffDatabase(Database):
         return self.fetch_one("""
             SELECT * FROM requests WHERE agent_name = ? AND (diff_status = 'DONE' OR diff_status = 'DONE_AND_NONE')
         """, (agent_id,))
-    
-    def _migrate_empty_diffs(self):
-        """Migrate existing DONE entries with empty diff_content to DONE_AND_NONE."""
-        self.execute("""
-            UPDATE requests 
-            SET diff_status = 'DONE_AND_NONE' 
-            WHERE diff_status = 'DONE' 
-            AND (diff_content IS NULL OR diff_content = '' OR TRIM(diff_content) = '')
-        """)

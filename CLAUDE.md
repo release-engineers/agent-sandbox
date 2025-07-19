@@ -44,13 +44,14 @@ Agent Sandbox (AGS) is a Docker-based isolation system for running Claude Code A
 #### AgentManager (`src/agent.py`)
 Main orchestration class with database integration:
 - `__init__(db_path)`: Initializes with database path, sets up all managers
-- `start_agent(name, goal)`: Creates unique timestamped agent, manages full workflow
+- `start_agent(goal)`: Creates unique timestamped agent, manages full workflow
+- `restart_agent(agent_name)`: Restart existing agent with same goal and reset status
 - `list_agents()`: Shows agent records from database with rich formatting
-- `stop_agent(name)`: Backward compatibility wrapper for cleanup
 - `cleanup_all()`: Removes all agents and resources
 - `auth()`: Runs Claude Code authentication
 - `show_agent_logs(name)`: Display logs for specific agent
-- `apply_diff(agent_name)`: Apply stored diff from database
+- `show_diff(agent_name)`: Output diff content for CLI piping
+- `get_diff(agent_name)`: Get diff content for TUI display
 
 #### WorkspaceManager (`src/workspace.py`)
 Git worktree and Docker container management:
@@ -64,7 +65,7 @@ Git worktree and Docker container management:
 Diff generation and application:
 - `generate_diff(agent_name, workspace_path)`: Creates and stores git diff
 - `apply_diff(agent_name)`: Applies stored diff to current working directory
-- `list_diffs_by_project(project)`: Lists diffs for current project
+- `get_diff_by_agent_name(agent_id)`: Retrieves diff content for specific agent
 - `update_agent_status()`: Updates agent status in database
 
 #### LogManager (`src/log.py`)
@@ -105,7 +106,9 @@ agent-process/
 │   ├── db.py             # Base database class
 │   ├── agent_db.py       # Agent request tracking
 │   ├── diff_db.py        # Diff storage and retrieval
-│   └── log_db.py         # Log persistence
+│   ├── log_db.py         # Log persistence
+│   └── tui/              # Terminal User Interface
+│       └── app.py        # Textual-based TUI application
 ├── requirements.txt       # Python dependencies (click, docker, rich)
 ├── bin/
 │   ├── ags               # Wrapper script for PATH usage
@@ -179,18 +182,57 @@ agent-process/
 }
 ```
 
-## CLI Commands
+## User Interfaces
 
-### Primary Commands
-- `ags start <name> "<goal>"`: Create and run agent with unique timestamped name
+### Terminal User Interface (TUI)
+Agent Sandbox includes a modern TUI built with Textual for interactive agent management:
+
+#### Starting the TUI
+```bash
+ags tui
+# or
+ags  # TUI is the default interface
+```
+
+#### TUI Features
+- **Real-time agent monitoring**: Auto-refreshing table showing all agents with status updates
+- **Vim-style colon commands**: Intuitive command interface inspired by vim
+- **Fullscreen diff viewer**: Syntax-highlighted git diffs with scrolling support
+- **Seamless typing**: Auto-focus input field, type anywhere to enter goals
+- **Table navigation**: Use up/down arrows when input is empty or starts with ":"
+- **Agent restart**: Re-run existing agents with the same goal
+
+#### Colon Commands
+- **`:q` or `:quit`**: Exit the TUI
+- **`:l` or `:logs`**: Show logs for selected agent (future feature)
+- **`:d` or `:diff`**: View diff for selected agent in fullscreen viewer
+- **`:r` or `:restart`**: Restart selected agent with same goal
+- **`:c` or `:cleanup`**: Clean up all agents and resources
+
+#### Agent Status Colors
+- **Green**: `DONE` - Agent completed with changes
+- **Dim Green**: `DONE_AND_NONE` - Agent completed with no changes
+- **Yellow**: `AGENT_RUNNING` - Agent currently executing
+- **Blue**: `AGENT_COMPLETE` - Agent finished, generating diff
+- **Red**: Error states or unknown status
+
+#### Keyboard Shortcuts
+- **Enter**: Submit goal to start new agent, or view diff if input is empty
+- **Ctrl+C**: Clear input field
+- **Up/Down arrows**: Navigate table when input empty or starts with ":"
+- **Escape**: Close diff viewer or other modals
+
+### CLI Commands (Legacy)
+
+#### Primary Commands
+- `ags start "<goal>"`: Create and run agent with unique timestamped name
 - `ags list`: Show agent records from database with rich formatting
-- `ags stop <name>`: Stop agent (backward compatibility)
 - `ags cleanup`: Remove all agents and resources
 - `ags auth`: Authenticate with Claude Code
 - `ags logs <name>`: View stored logs for specific agent
-- `ags apply <agent_name>`: Apply stored diff from completed agent
+- `ags diff <agent_name>`: Output diff content for piping to git apply
 
-### Implementation Details
+#### Implementation Details
 - **Click framework**: Command-line interface in `src/main.py`
 - **Rich formatting**: Colorized output with progress indicators
 - **Database persistence**: All operations tracked in `~/.ags/agents.db`
@@ -214,6 +256,7 @@ agent-process/
 - **Thread-safe**: All database operations use threading locks
 - **Persistent storage**: Agent requests, diffs, and logs preserved
 - **Cleanup**: Database records remain after container cleanup
+- **Status tracking**: Enhanced diff status including `DONE_AND_NONE` for empty diffs
 
 ## Error Handling
 
