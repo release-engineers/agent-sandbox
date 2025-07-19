@@ -10,7 +10,6 @@ import tempfile
 import shutil
 from pathlib import Path
 from datetime import datetime
-import re
 
 import click
 import docker
@@ -18,13 +17,9 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
 from rich.table import Table
-from rich.syntax import Syntax
-from rich.live import Live
-from rich.layout import Layout
-from rich.text import Text
-from rich import print as rprint
 
 from logs import AgentLogFormatter
+from database import AgentDatabase, DiffStatus
 
 
 class AgentManager:
@@ -32,7 +27,12 @@ class AgentManager:
     
     def __init__(self):
         self.console = Console()
-        self.log_formatter = AgentLogFormatter(self.console)
+        # Create ~/.ags directory if it doesn't exist
+        self.ags_dir = Path.home() / ".ags"
+        self.ags_dir.mkdir(exist_ok=True)
+        # Initialize database in ~/.ags/agents.db
+        self.db = AgentDatabase(str(self.ags_dir / "agents.db"))
+        self.log_formatter = None  # Will be initialized per agent
         try:
             self.docker = docker.from_env()
         except Exception as e:
@@ -45,6 +45,8 @@ class AgentManager:
         self.git_root = self._get_git_root()
         self.worktree_dir = self.git_root.parent / "worktrees"
         self.worktree_dir.mkdir(exist_ok=True)
+        # Get current project name (base name of working directory)
+        self.project_name = Path.cwd().name
         
     def _get_git_root(self) -> Path:
         """Get git repository root."""
@@ -80,17 +82,27 @@ class AgentManager:
     
     def start_agent(self, name: str, goal: str):
         """Start a new agent."""
+        # Generate unique agent name with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        unique_name = f"{name}-{timestamp}"
+        
         self.console.print(Panel(
-            f"[bold cyan]Agent Name:[/bold cyan] {name}\n[bold cyan]Goal:[/bold cyan] {goal}",
+            f"[bold cyan]Agent Name:[/bold cyan] {name}\n[bold cyan]Unique ID:[/bold cyan] {unique_name}\n[bold cyan]Goal:[/bold cyan] {goal}",
             title="🚀 Starting Agent",
             border_style="cyan"
         ))
         
         # Clean up any existing environment for this name
-        self._cleanup_existing_agent(name)
+        self._cleanup_existing_agent(unique_name)
+        
+        # Create database request with unique name
+        request_id = self.db.create_request(unique_name, self.project_name, goal)
+        
+        # Initialize log formatter with database support
+        self.log_formatter = AgentLogFormatter(self.console, self.db, request_id)
         
         # Create workspace directory
-        workspace_path = self.worktree_dir / name
+        workspace_path = self.worktree_dir / unique_name
         
         with self.console.status("[cyan]Creating workspace...[/cyan]", spinner="dots") as status:
             # Clone the current repo to workspace
@@ -161,7 +173,7 @@ class AgentManager:
         with self.console.status("[cyan]Starting proxy container...[/cyan]", spinner="dots"):
             self.docker.containers.run(
                 "claude-code-proxy",
-                name=f"proxy-{name}",
+                name=f"proxy-{unique_name}",
                 network="agent-network",
                 detach=True,
                 auto_remove=True
@@ -174,7 +186,7 @@ class AgentManager:
         temp_log_dir = None
         try:
             # Create log directory in a temporary location on the host
-            temp_log_dir = tempfile.mkdtemp(prefix=f"ags-{name}-logs-")
+            temp_log_dir = tempfile.mkdtemp(prefix=f"ags-{unique_name}-logs-")
             log_dir = Path(temp_log_dir)
             log_file = log_dir / "ags.log"
             log_file.touch()
@@ -185,12 +197,12 @@ class AgentManager:
             # Create and start container to properly stream output
             container = self.docker.containers.create(
                 "claude-code-agent",
-                name=name,
+                name=unique_name,
                 network="agent-network",
                 environment={
                     "CLAUDE_GOAL": goal,
-                    "HTTP_PROXY": f"http://proxy-{name}:3128",
-                    "HTTPS_PROXY": f"http://proxy-{name}:3128"
+                    "HTTP_PROXY": f"http://proxy-{unique_name}:3128",
+                    "HTTPS_PROXY": f"http://proxy-{unique_name}:3128"
                 },
                 volumes={
                     str(workspace_path): {"bind": "/workspace", "mode": "rw"},
@@ -234,13 +246,25 @@ class AgentManager:
             
             # Wait for completion
             result = container.wait()
-            if result['StatusCode'] == 0:
+            exit_code = result['StatusCode']
+            
+            # Update database status to AGENT_COMPLETE
+            self.db.update_request_status(unique_name, DiffStatus.AGENT_COMPLETE, exit_code=exit_code)
+            
+            if exit_code == 0:
                 self.console.print("\n[bold green]✅ Agent completed successfully[/bold green]")
             else:
-                self.console.print(f"\n[bold red]❌ Agent failed with exit code: {result['StatusCode']}[/bold red]")
+                self.console.print(f"\n[bold red]❌ Agent failed with exit code: {exit_code}[/bold red]")
+                self.db.update_request_status(unique_name, DiffStatus.AGENT_COMPLETE, 
+                                            exit_code=exit_code, 
+                                            error_message=f"Agent failed with exit code {exit_code}")
             
         except Exception as e:
             self.console.print(f"\n[bold red]❌ Agent failed:[/bold red] {e}")
+            # Update database with error
+            self.db.update_request_status(unique_name, DiffStatus.AGENT_COMPLETE, 
+                                        exit_code=-1, 
+                                        error_message=str(e))
         finally:
             # Clean up temporary log directory
             if temp_log_dir and Path(temp_log_dir).exists():
@@ -248,7 +272,7 @@ class AgentManager:
                 shutil.rmtree(temp_log_dir)
             
         # Now clean up and commit changes
-        self._cleanup_and_commit(name)
+        self._cleanup_and_commit(unique_name)
         
     def _cleanup_and_commit(self, name: str):
         """Clean up containers and generate diff."""
@@ -277,52 +301,72 @@ class AgentManager:
     def _generate_diff(self, name: str, workspace_path: Path):
         """Generate a diff of agent changes."""
         try:
-            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-            diff_filename = f"agent-{name}-{timestamp}.diff"
-            diff_path = self.git_root / diff_filename
-            
             result = self._run_command(["git", "-C", str(workspace_path), "diff", "HEAD"])
             
             if result.stdout.strip():
-                with open(diff_path, "w") as f:
-                    f.write(result.stdout)
-                
-                self.console.print(f"[green]📄 Generated diff:[/green] {diff_path}")
-                self.console.print(f"[dim]Apply with: git apply {diff_path}[/dim]")
+                # Save diff directly to database and update status to DONE
+                self.db.save_diff(name, result.stdout)
+                self.console.print(f"[green]📄 Diff generated and saved to database[/green]")
             else:
                 self.console.print("[dim]No changes detected[/dim]")
+                # Even with no changes, update status to DONE
+                self.db.save_diff(name, "")
                 
         except Exception as e:
             self.console.print(f"[red]⚠️  Failed to generate diff: {e}[/red]")
+            # Update database with error but still mark as DONE
+            self.db.update_request_status(name, DiffStatus.DONE, 
+                                        error_message=f"Failed to generate diff: {e}")
         
     def list_agents(self):
-        """List agent workspaces."""
-        table = Table(title="Agent Workspaces", show_header=True, header_style="bold cyan")
-        table.add_column("Workspace", style="yellow")
-        table.add_column("Status", style="white")
+        """List agent workspaces and database records."""
+        # Show database records - use same data as diff command
+        requests = self.db.list_diffs_by_project(self.project_name, limit=20)
         
-        # Get workspace directories
-        if not self.worktree_dir.exists():
-            self.console.print("[dim]No workspaces found[/dim]")
+        table = Table(title=f"Agent Requests for Project: {self.project_name}", show_header=True, header_style="bold cyan")
+        table.add_column("Name", style="yellow")
+        table.add_column("Goal", style="white", max_width=40)
+        table.add_column("Status", style="magenta")
+        table.add_column("Project", style="cyan")
+        table.add_column("Timestamp", style="green")
+        
+        if not requests:
+            self.console.print(table)
             return
-            
-        workspaces = [d for d in self.worktree_dir.iterdir() if d.is_dir()]
         
-        if not workspaces:
-            self.console.print("[dim]No workspaces found[/dim]")
-            return
-        
-        for workspace in sorted(workspaces):
-            # Check if container is running
-            try:
-                container = self.docker.containers.get(workspace.name)
-                status = "running" if container.status == "running" else "stopped"
-            except docker.errors.NotFound:
-                status = "idle"
+        for req in requests:
+            # Get most recent timestamp between completed and started
+            completed = req['completed_at'] if req['completed_at'] else None
+            started = req['started_at'] if req['started_at'] else None
+            most_recent = completed if completed else started if started else '-'
             
-            table.add_row(workspace.name, status)
+            # Truncate goal if too long
+            goal = req['goal']
+            if len(goal) > 40:
+                goal = goal[:37] + "..."
+            
+            table.add_row(
+                req['agent_name'],
+                goal,
+                req['diff_status'],
+                req['project'],
+                most_recent
+            )
         
         self.console.print(table)
+        
+        # Show apply instruction if there are diffs available
+        if requests:
+            self.console.print(f"\n[dim]Use 'ags apply <agent-name>' to apply a specific diff[/dim]")
+        
+        # Also check for active containers
+        active_containers = []
+        for container in self.docker.containers.list(all=True):
+            if container.attrs["Config"]["Image"] == "claude-code-agent":
+                active_containers.append(container.name)
+        
+        if active_containers:
+            self.console.print(f"\n[cyan]Active containers:[/cyan] {', '.join(active_containers)}")
             
     def stop_agent(self, name: str):
         """Stop and remove an agent (for backward compatibility)."""
@@ -434,6 +478,102 @@ def auth():
     """Authenticate with Claude Code."""
     manager = AgentManager()
     manager.auth()
+
+
+@cli.command()
+@click.argument("name")
+def logs(name: str):
+    """View logs for a specific agent from the database."""
+    manager = AgentManager()
+    
+    # Initialize log formatter for display purposes
+    manager.log_formatter = AgentLogFormatter(manager.console)
+    
+    # Get agent status
+    status = manager.db.get_agent_status(name)
+    if not status:
+        raise click.ClickException(f"Agent '{name}' not found in database")
+    
+    # Display agent info
+    manager.console.print(Panel(
+        f"[bold cyan]Agent:[/bold cyan] {name}\n"
+        f"[bold cyan]Goal:[/bold cyan] {status['goal']}\n"
+        f"[bold cyan]Status:[/bold cyan] {status['diff_status']}\n"
+        f"[bold cyan]Started:[/bold cyan] {status['started_at'] or '-'}\n"
+        f"[bold cyan]Completed:[/bold cyan] {status['completed_at'] or '-'}",
+        title="📋 Agent Information",
+        border_style="cyan"
+    ))
+    
+    # Get and display logs
+    logs = manager.db.get_agent_logs(name)
+    if not logs:
+        manager.console.print("[dim]No logs found[/dim]")
+        return
+    
+    manager.console.print(f"\n[bold]Agent Logs ({len(logs)} entries):[/bold]\n")
+    
+    for log in logs:
+        timestamp = log['timestamp']
+        if log['tool_name']:
+            # Tool event
+            tool_input = json.loads(log['tool_input']) if log['tool_input'] else {}
+            details = manager.log_formatter._format_tool_details(log['tool_name'], tool_input)
+            manager.console.print(
+                f"[dim]{timestamp}[/dim] [{log['hook_event']}] "
+                f"[bold blue]{log['tool_name']}[/bold blue]: {details}"
+            )
+        else:
+            # Regular message
+            manager.console.print(f"[dim]{timestamp}[/dim] {log['message']}")
+
+
+
+@cli.command()
+@click.argument("agent_name")
+def apply(agent_name: str):
+    """Apply a specific diff by agent name."""
+    manager = AgentManager()
+    
+    # Get diff by agent name
+    diff_record = manager.db.get_diff_by_agent_name(agent_name)
+    if not diff_record:
+        raise click.ClickException(f"No diff found for agent '{agent_name}'")
+    
+    if not diff_record['diff_content']:
+        raise click.ClickException(f"No diff content available for agent '{agent_name}'")
+    
+    # Show diff info
+    manager.console.print(Panel(
+        f"[bold cyan]Agent:[/bold cyan] {diff_record['agent_name']}\n"
+        f"[bold cyan]Project:[/bold cyan] {diff_record['project']}\n"
+        f"[bold cyan]Goal:[/bold cyan] {diff_record['goal']}\n"
+        f"[bold cyan]Completed:[/bold cyan] {diff_record['completed_at'] or '-'}",
+        title="📄 Diff Information",
+        border_style="cyan"
+    ))
+    
+    # Apply the diff
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.diff', delete=False) as temp_file:
+            temp_file.write(diff_record['diff_content'])
+            temp_file_path = temp_file.name
+        
+        try:
+            # Apply diff using git apply
+            result = manager._run_command(["git", "apply", temp_file_path])
+            
+            if result.returncode == 0:
+                manager.console.print(f"[green]✅ Successfully applied diff for agent '{agent_name}'[/green]")
+            else:
+                manager.console.print(f"[red]❌ Failed to apply diff: {result.stderr}[/red]")
+                raise click.ClickException(f"Git apply failed: {result.stderr}")
+        finally:
+            # Clean up temporary file
+            Path(temp_file_path).unlink(missing_ok=True)
+            
+    except Exception as e:
+        raise click.ClickException(f"Failed to apply diff: {e}")
 
 
 if __name__ == "__main__":

@@ -4,14 +4,19 @@
 import json
 import re
 from datetime import datetime
+from typing import Optional
 from rich.console import Console
+
+from database import AgentDatabase
 
 
 class AgentLogFormatter:
     """Formats agent logs with rich styling."""
     
-    def __init__(self, console: Console):
+    def __init__(self, console: Console, db: Optional[AgentDatabase] = None, request_id: Optional[int] = None):
         self.console = console
+        self.db = db
+        self.request_id = request_id
         
         self.tool_colors = {
             # File operations
@@ -60,12 +65,42 @@ class AgentLogFormatter:
         try:
             log_data = json.loads(line.strip())
             self._format_json_log(log_data)
+            
+            # Save to database if available
+            if self.db and self.request_id:
+                if 'tool_name' in log_data:
+                    # Tool event log
+                    self.db.log_tool_event(
+                        request_id=self.request_id,
+                        tool_name=log_data.get('tool_name', 'unknown'),
+                        hook_event=log_data.get('hook_event_name', 'unknown'),
+                        tool_input=log_data.get('tool_input', {}),
+                        timestamp=log_data.get('timestamp'),
+                        raw_log=line
+                    )
+                else:
+                    # Regular log message
+                    self.db.log_message(
+                        request_id=self.request_id,
+                        message=str(log_data),
+                        level='INFO',
+                        raw_log=line
+                    )
             return
         except json.JSONDecodeError:
             pass
             
         # Regular output from the agent
         self.console.print(line)
+        
+        # Save non-JSON logs to database
+        if self.db and self.request_id:
+            self.db.log_message(
+                request_id=self.request_id,
+                message=line,
+                level='INFO',
+                raw_log=line
+            )
     
     def _format_json_log(self, log_data: dict):
         """Format JSON log data into simple timestamp + content format."""
