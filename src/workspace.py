@@ -46,7 +46,7 @@ class WorkspaceManager:
         for container_name in [name, f"proxy-{name}"]:
             try:
                 container = self.docker.containers.get(container_name)
-                self.console.print(f"[yellow]⏹  Stopping existing container:[/yellow] {container_name}")
+                self.console.print(f"⏹ Stopping existing container: {container_name}")
                 container.stop()
                 container.remove()
             except docker.errors.NotFound:
@@ -54,7 +54,7 @@ class WorkspaceManager:
         
         workspace_path = self.worktree_dir / name
         if workspace_path.exists():
-            self.console.print(f"[yellow]🗑  Removing existing workspace:[/yellow] {workspace_path}")
+            self.console.print(f"🗑 Removing existing workspace: {workspace_path}")
             shutil.rmtree(workspace_path)
     
     def create_workspace(self, name: str) -> Path:
@@ -143,7 +143,7 @@ class WorkspaceManager:
     
     def run_agent_container(self, name: str, goal: str, workspace_path: Path, log_formatter) -> int:
         """Run agent container and return exit code."""
-        self.console.print("\n[bold cyan]🤖 Starting agent container...[/bold cyan]")
+        self.console.print("🤖 Starting agent container...")
         
         temp_log_dir = None
         try:
@@ -219,16 +219,16 @@ class WorkspaceManager:
         """Remove workspace directory."""
         workspace_path = self.worktree_dir / name
         if workspace_path.exists():
-            self.console.print(f"[yellow]🗑  Removing workspace:[/yellow] {workspace_path}")
+            self.console.print(f"🗑 Removing workspace: {workspace_path}")
             shutil.rmtree(workspace_path)
     
     def cleanup_all(self):
         """Clean up all agents and resources."""
-        self.console.print("[bold yellow]🧽 Cleaning up all agents...[/bold yellow]")
+        self.console.print("🧽 Cleaning up all agents...")
         
         for container in self.docker.containers.list(all=True):
             if container.attrs["Config"]["Image"] in ["claude-code-agent", "claude-code-proxy"]:
-                self.console.print(f"[yellow]🗑  Removing container:[/yellow] {container.name}")
+                self.console.print(f"🗑 Removing container: {container.name}")
                 container.stop()
                 container.remove()
         
@@ -240,11 +240,11 @@ class WorkspaceManager:
             pass
         
         if self.worktree_dir.exists():
-            self.console.print(f"[yellow]🗑  Removing all workspaces:[/yellow] {self.worktree_dir}")
+            self.console.print(f"🗑 Removing all workspaces: {self.worktree_dir}")
             shutil.rmtree(self.worktree_dir)
             self.worktree_dir.mkdir(exist_ok=True)
         
-        self.console.print("\n[bold green]✅ Cleanup completed[/bold green]")
+        self.console.print("✅ Cleanup completed")
     
     def run_auth_container(self):
         """Run Claude Code authentication."""

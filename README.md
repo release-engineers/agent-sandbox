@@ -87,7 +87,9 @@ ags cleanup
 | Command | Description |
 |---------|-------------|
 | `ags start <name> "<goal>"` | Start new agent with goal |
-| `ags list` | Show agent branches |
+| `ags list` | Show agent records with status |
+| `ags logs <name>` | View logs for specific agent |
+| `ags apply <name>` | Apply stored diff from agent |
 | `ags stop <name>` | Stop running agent |
 | `ags cleanup` | Remove all agents |
 | `ags auth` | Authenticate Claude Code |
@@ -103,6 +105,11 @@ ags start fix-bug "Fix the memory leak in the worker process"
 
 # Refactor code
 ags start refactor "Refactor database queries to use prepared statements"
+
+# View agent history and apply changes
+ags list                           # Show completed agents
+ags logs add-tests-20240122-143022 # View specific agent logs  
+ags apply add-tests-20240122-143022 # Apply the agent's changes
 
 # Multiple agents in parallel
 ags start frontend "Update React components to use hooks"
@@ -148,9 +155,15 @@ ags cleanup
 ## Project Structure
 
 ```
-agent-sandbox/
-├── agent.py               # Main Python script
-├── requirements.txt       # Dependencies (click, docker)
+agent-process/
+├── src/                   # Modular Python source
+│   ├── main.py           # CLI interface
+│   ├── agent.py          # Agent orchestration
+│   ├── workspace.py      # Git/Docker management
+│   ├── diff.py           # Diff operations
+│   ├── log.py            # Log formatting
+│   └── *_db.py           # Database modules
+├── requirements.txt       # Dependencies (click, docker, rich)
 ├── bin/
 │   ├── ags               # CLI wrapper
 │   └── ags-test          # Test script

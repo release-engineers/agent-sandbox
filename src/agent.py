@@ -30,11 +30,8 @@ class AgentManager:
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         unique_name = f"{name}-{timestamp}"
         
-        self.console.print(Panel(
-            f"[bold cyan]Agent Name:[/bold cyan] {name}\n[bold cyan]Unique ID:[/bold cyan] {unique_name}\n[bold cyan]Goal:[/bold cyan] {goal}",
-            title="🚀 Starting Agent",
-            border_style="cyan"
-        ))
+        self.console.print(f"🚀 Starting agent [cyan]{name}[/cyan] ({unique_name})")
+        self.console.print(f"   Goal: {goal}")
         
         self.workspace_manager.cleanup_existing_agent(unique_name)
         
@@ -56,9 +53,9 @@ class AgentManager:
             self.diff_manager.update_agent_status(unique_name, DiffStatus.AGENT_COMPLETE, exit_code=exit_code)
             
             if exit_code == 0:
-                self.console.print("\n[bold green]✅ Agent completed successfully[/bold green]")
+                self.console.print("✅ Agent completed successfully")
             else:
-                self.console.print(f"\n[bold red]❌ Agent failed with exit code: {exit_code}[/bold red]")
+                self.console.print(f"❌ Agent failed with exit code: {exit_code}")
                 self.diff_manager.update_agent_status(
                     unique_name, DiffStatus.AGENT_COMPLETE, 
                     exit_code=exit_code, 
@@ -66,7 +63,7 @@ class AgentManager:
                 )
             
         except Exception as e:
-            self.console.print(f"\n[bold red]❌ Agent failed:[/bold red] {e}")
+            self.console.print(f"❌ Agent failed: {e}")
             self.diff_manager.update_agent_status(
                 unique_name, DiffStatus.AGENT_COMPLETE, 
                 exit_code=-1, 
@@ -77,7 +74,7 @@ class AgentManager:
     
     def _cleanup_and_commit(self, name: str):
         """Clean up containers and generate diff."""
-        self.console.print("\n[bold]🧿 Cleaning up and generating diff...[/bold]")
+        self.console.print("🧹 Cleaning up and generating diff...")
         
         self.workspace_manager.stop_containers(name)
         
@@ -86,7 +83,7 @@ class AgentManager:
             self.diff_manager.generate_diff(name, workspace_path)
             self.workspace_manager.remove_workspace(name)
         
-        self.console.print(f"\n[bold green]🎉 Agent {name} completed successfully[/bold green]")
+        self.console.print(f"✅ Agent {name} completed successfully")
     
     def list_agents(self):
         """List agent workspaces and database records."""
@@ -131,7 +128,7 @@ class AgentManager:
     
     def stop_agent(self, name: str):
         """Stop and remove an agent (for backward compatibility)."""
-        self.console.print(f"[bold yellow]⏹  Stopping agent: {name}[/bold yellow]")
+        self.console.print(f"⏹ Stopping agent: {name}")
         self._cleanup_and_commit(name)
     
     def cleanup_all(self):
@@ -140,11 +137,8 @@ class AgentManager:
     
     def auth(self):
         """Run Claude Code authentication."""
-        self.console.print(Panel(
-            "[bold cyan]Starting Claude Code authentication...[/bold cyan]\n\nFollow the prompts to authenticate with your Claude account.",
-            title="🔐 Authentication",
-            border_style="cyan"
-        ))
+        self.console.print("🔐 Starting Claude Code authentication...")
+        self.console.print("   Follow the prompts to authenticate with your Claude account.")
         self.workspace_manager.run_auth_container()
     
     def show_agent_logs(self, name: str):
@@ -156,15 +150,11 @@ class AgentManager:
             self.console.print(f"[red]Agent '{name}' not found in database[/red]")
             return
         
-        self.console.print(Panel(
-            f"[bold cyan]Agent:[/bold cyan] {name}\n"
-            f"[bold cyan]Goal:[/bold cyan] {status['goal']}\n"
-            f"[bold cyan]Status:[/bold cyan] {status['diff_status']}\n"
-            f"[bold cyan]Started:[/bold cyan] {status['started_at'] or '-'}\n"
-            f"[bold cyan]Completed:[/bold cyan] {status['completed_at'] or '-'}",
-            title="📋 Agent Information",
-            border_style="cyan"
-        ))
+        self.console.print(f"📋 Agent: [cyan]{name}[/cyan]")
+        self.console.print(f"   Goal: {status['goal']}")
+        self.console.print(f"   Status: {status['diff_status']}")
+        self.console.print(f"   Started: {status['started_at'] or '-'}")
+        self.console.print(f"   Completed: {status['completed_at'] or '-'}")
         
         self.log_manager.display_agent_logs(name, self.log_formatter)
     
@@ -179,14 +169,10 @@ class AgentManager:
             self.console.print(f"[red]No diff content available for agent '{agent_name}'[/red]")
             return
         
-        self.console.print(Panel(
-            f"[bold cyan]Agent:[/bold cyan] {diff_record['agent_name']}\n"
-            f"[bold cyan]Project:[/bold cyan] {diff_record['project']}\n"
-            f"[bold cyan]Goal:[/bold cyan] {diff_record['goal']}\n"
-            f"[bold cyan]Completed:[/bold cyan] {diff_record['completed_at'] or '-'}",
-            title="📄 Diff Information",
-            border_style="cyan"
-        ))
+        self.console.print(f"📄 Applying diff for [cyan]{diff_record['agent_name']}[/cyan]")
+        self.console.print(f"   Project: {diff_record['project']}")
+        self.console.print(f"   Goal: {diff_record['goal']}")
+        self.console.print(f"   Completed: {diff_record['completed_at'] or '-'}")
         
         if not self.diff_manager.apply_diff(agent_name):
             self.console.print(f"[red]Failed to apply diff for agent '{agent_name}'[/red]")

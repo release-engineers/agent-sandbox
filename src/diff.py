@@ -24,7 +24,7 @@ class DiffManager:
             
             if result.stdout.strip():
                 self._db.save_diff(agent_name, result.stdout)
-                self.console.print(f"[green]📄 Diff generated and saved to database[/green]")
+                self.console.print("📄 Diff generated and saved to database")
                 return True
             else:
                 self.console.print("[dim]No changes detected[/dim]")
@@ -32,7 +32,7 @@ class DiffManager:
                 return True
                 
         except Exception as e:
-            self.console.print(f"[red]⚠️  Failed to generate diff: {e}[/red]")
+            self.console.print(f"⚠️ Failed to generate diff: {e}")
             self._db.update_request_status(agent_name, DiffStatus.DONE, 
                                         error_message=f"Failed to generate diff: {e}")
             return False
@@ -71,10 +71,10 @@ class DiffManager:
                 result = self._run_command(["git", "apply", temp_file_path])
                 
                 if result.returncode == 0:
-                    self.console.print(f"[green]✅ Successfully applied diff for agent '{agent_name}'[/green]")
+                    self.console.print(f"✅ Successfully applied diff for agent '{agent_name}'")
                     return True
                 else:
-                    self.console.print(f"[red]❌ Failed to apply diff: {result.stderr}[/red]")
+                    self.console.print(f"❌ Failed to apply diff: {result.stderr}")
                     return False
             finally:
                 Path(temp_file_path).unlink(missing_ok=True)
