@@ -43,9 +43,6 @@ class DiffManager:
         """Update agent status."""
         self._db.update_request_status(agent_id, status, exit_code, error_message)
     
-    def list_diffs_by_project(self, project: str, limit: int = 50) -> List[Dict[str, Any]]:
-        """List diffs for a specific project."""
-        return self._db.list_diffs_by_project(project, limit)
     
     def get_diff_by_agent_name(self, agent_id: str) -> Optional[Dict[str, Any]]:
         """Get a specific diff by agent ID."""

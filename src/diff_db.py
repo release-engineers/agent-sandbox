@@ -11,6 +11,7 @@ class DiffStatus(Enum):
     AGENT_RUNNING = "AGENT_RUNNING"
     AGENT_COMPLETE = "AGENT_COMPLETE"
     DONE = "DONE"
+    DONE_AND_NONE = "DONE_AND_NONE"
 
 
 class DiffDatabase(Database):
@@ -35,6 +36,9 @@ class DiffDatabase(Database):
         """)
         
         self.execute("CREATE INDEX IF NOT EXISTS idx_requests_agent_name ON requests(agent_name)")
+        
+        # Migrate existing DONE entries with empty/null diff_content to DONE_AND_NONE
+        self._migrate_empty_diffs()
     
     def update_request_status(self, agent_id: str, diff_status: DiffStatus, 
                             exit_code: Optional[int] = None, 
@@ -63,34 +67,27 @@ class DiffDatabase(Database):
         """, tuple(params))
     
     def save_diff(self, agent_id: str, diff_content: str):
-        """Save the diff content and update status to DONE."""
+        """Save the diff content and update status to DONE or DONE_AND_NONE."""
+        # Choose status based on whether diff has content
+        status = DiffStatus.DONE_AND_NONE if not diff_content.strip() else DiffStatus.DONE
         self.execute("""
             UPDATE requests 
             SET diff_content = ?, diff_status = ?
             WHERE agent_name = ?
-        """, (diff_content, DiffStatus.DONE.value, agent_id))
+        """, (diff_content, status.value, agent_id))
     
-    def list_diffs_by_project(self, project: str, limit: int = 50) -> List[Dict[str, Any]]:
-        """List diffs for a specific project, or all projects if project is empty."""
-        if project:
-            return self.fetch_all("""
-                SELECT agent_name, project, goal, started_at, completed_at, diff_status
-                FROM requests 
-                WHERE project = ? AND diff_status = 'DONE'
-                ORDER BY completed_at DESC 
-                LIMIT ?
-            """, (project, limit))
-        else:
-            return self.fetch_all("""
-                SELECT agent_name, project, goal, started_at, completed_at, diff_status
-                FROM requests 
-                WHERE diff_status = 'DONE'
-                ORDER BY completed_at DESC 
-                LIMIT ?
-            """, (limit,))
     
     def get_diff_by_agent_name(self, agent_id: str) -> Optional[Dict[str, Any]]:
         """Get a specific diff by agent ID."""
         return self.fetch_one("""
-            SELECT * FROM requests WHERE agent_name = ? AND diff_status = 'DONE'
+            SELECT * FROM requests WHERE agent_name = ? AND (diff_status = 'DONE' OR diff_status = 'DONE_AND_NONE')
         """, (agent_id,))
+    
+    def _migrate_empty_diffs(self):
+        """Migrate existing DONE entries with empty diff_content to DONE_AND_NONE."""
+        self.execute("""
+            UPDATE requests 
+            SET diff_status = 'DONE_AND_NONE' 
+            WHERE diff_status = 'DONE' 
+            AND (diff_content IS NULL OR diff_content = '' OR TRIM(diff_content) = '')
+        """)
