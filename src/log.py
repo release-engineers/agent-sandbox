@@ -1,41 +1,34 @@
 #!/usr/bin/env python3
-"""Logging utilities for the agent process manager."""
+"""Logging operations and formatting."""
 
 import json
 import re
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict, Any, List
 from rich.console import Console
 
-from database import AgentDatabase
+from .log_db import LogDatabase
 
 
 class AgentLogFormatter:
     """Formats agent logs with rich styling."""
     
-    def __init__(self, console: Console, db: Optional[AgentDatabase] = None, request_id: Optional[int] = None):
+    def __init__(self, console: Console, db: Optional[LogDatabase] = None, request_id: Optional[int] = None):
         self.console = console
         self.db = db
         self.request_id = request_id
         
         self.tool_colors = {
-            # File operations
             'Read': 'blue',
             'Write': 'blue', 
             'Edit': 'blue',
             'MultiEdit': 'blue',
             'LS': 'blue',
-            
-            # Search operations
             'Grep': 'cyan',
             'Glob': 'cyan',
             'WebSearch': 'cyan',
             'WebFetch': 'cyan',
-            
-            # Execution
             'Bash': 'yellow',
-            
-            # Task management
             'Task': 'green',
             'TodoWrite': 'green'
         }
@@ -57,19 +50,15 @@ class AgentLogFormatter:
     
     def format_log_line(self, line: str):
         """Format log lines with rich styling."""
-        # Skip empty lines
         if not line.strip():
             return
             
-        # Try to parse as JSON first
         try:
             log_data = json.loads(line.strip())
             self._format_json_log(log_data)
             
-            # Save to database if available
             if self.db and self.request_id:
                 if 'tool_name' in log_data:
-                    # Tool event log
                     self.db.log_tool_event(
                         request_id=self.request_id,
                         tool_name=log_data.get('tool_name', 'unknown'),
@@ -79,7 +68,6 @@ class AgentLogFormatter:
                         raw_log=line
                     )
                 else:
-                    # Regular log message
                     self.db.log_message(
                         request_id=self.request_id,
                         message=str(log_data),
@@ -90,10 +78,8 @@ class AgentLogFormatter:
         except json.JSONDecodeError:
             pass
             
-        # Regular output from the agent
         self.console.print(line)
         
-        # Save non-JSON logs to database
         if self.db and self.request_id:
             self.db.log_message(
                 request_id=self.request_id,
@@ -109,17 +95,13 @@ class AgentLogFormatter:
         hook_event = log_data.get('hook_event_name', 'unknown')
         tool_input = log_data.get('tool_input', {})
         
-        # Format timestamp
         try:
             dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-            time_str = dt.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]  # Include milliseconds
+            time_str = dt.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
         except:
             time_str = timestamp
         
-        # Format details based on tool type
         details = self._format_tool_details(tool_name, tool_input)
-        
-        # Print in simple format: [timestamp] event: tool - details
         self.console.print(f"[{time_str}] {hook_event}: {tool_name} - {details}")
     
     def _format_tool_details(self, tool_name: str, tool_input: dict) -> str:
@@ -149,7 +131,6 @@ class AgentLogFormatter:
             
         elif tool_name == "Bash":
             command = tool_input.get('command', 'unknown')
-            # Truncate and clean up command for display
             display_cmd = command[:100].replace('\n', ' ').strip()
             display_cmd = re.sub(r'\s+', ' ', display_cmd)
             return f"Running: {display_cmd}"
@@ -188,4 +169,37 @@ class AgentLogFormatter:
     
     def _shorten_path(self, path: str) -> str:
         """Shorten long paths for display."""
-        return path.replace('/workspace/', '') if path.startswith('/workspace/') else path 
+        return path.replace('/workspace/', '') if path.startswith('/workspace/') else path
+
+
+class LogManager:
+    """Manages log operations without exposing database internals."""
+    
+    def __init__(self, db_path: str):
+        self._db = LogDatabase(db_path)
+        self.console = Console()
+    
+    def get_agent_logs(self, agent_name: str) -> List[Dict[str, Any]]:
+        """Get all logs for an agent."""
+        return self._db.get_agent_logs(agent_name)
+    
+    def display_agent_logs(self, agent_name: str, formatter: AgentLogFormatter):
+        """Display agent logs using the formatter."""
+        logs = self.get_agent_logs(agent_name)
+        if not logs:
+            self.console.print("[dim]No logs found[/dim]")
+            return
+        
+        self.console.print(f"\n[bold]Agent Logs ({len(logs)} entries):[/bold]\n")
+        
+        for log in logs:
+            timestamp = log['timestamp']
+            if log['tool_name']:
+                tool_input = json.loads(log['tool_input']) if log['tool_input'] else {}
+                details = formatter._format_tool_details(log['tool_name'], tool_input)
+                self.console.print(
+                    f"[dim]{timestamp}[/dim] [{log['hook_event']}] "
+                    f"[bold blue]{log['tool_name']}[/bold blue]: {details}"
+                )
+            else:
+                self.console.print(f"[dim]{timestamp}[/dim] {log['message']}")

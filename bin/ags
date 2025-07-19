@@ -11,5 +11,6 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 # Activate virtual environment
 source "$PROJECT_DIR/venv/bin/activate"
 
-# Run agent.py with all arguments
-exec "$PROJECT_DIR/agent.py" "$@"
+# Set PYTHONPATH to include project directory and run main.py with all arguments
+export PYTHONPATH="$PROJECT_DIR:$PYTHONPATH"
+exec python -m src.main "$@"
