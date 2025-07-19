@@ -68,7 +68,7 @@ class AgentApp(App):
     CSS = """
     Screen {
         layout: vertical;
-        background: black;
+        background: transparent;
     }
     
     Container {
@@ -78,24 +78,24 @@ class AgentApp(App):
     
     DataTable {
         border: none;
-        background: black;
+        background: transparent;
         width: 100%;
     }
     
     DataTable > .datatable--header {
-        background: black;
+        background: transparent;
     }
     
     Input {
         border: solid gray;
         dock: bottom;
-        background: black;
+        background: transparent;
         margin: 0 1;
     }
     
     .command-footer {
         dock: bottom;
-        background: black;
+        background: transparent;
         color: gray;
         text-align: left;
         height: 1;
