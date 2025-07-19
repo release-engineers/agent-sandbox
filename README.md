@@ -36,20 +36,22 @@ pip install -r requirements.txt
 export PATH="$(pwd)/bin:$PATH"
 ```
 
-### Basic Usage
+## Usage
 
 ```bash
-# Launch the TUI interface
 ags
 
-# In the TUI:
-# - Type your goal and press Enter to start an agent
-# - Use :d to view diffs, :r to restart agents
-# - Use :c to cleanup agents
-# - Press :q to quit
+# Type your goal, hit Enter. i.e. "Add error handling to the login function"
 
-# Authenticate Claude Code when prompted, or use:
-# docker run -it --rm -v claude-code-credentials:/home/node/.claude node:20 claude auth
+# Navigate with arrows when input is empty
+# Use colon commands:
+:d    # or :diff    to view a diff for the selected agent
+:r    # or :restart to restart the selected agent
+:c    # or :cleanup to remove all agent containers and worktrees
+:q    # or :quit    to exit the TUI
+
+# The first run will require Claude auth to set up your credentials volume:
+docker run -it --rm -v claude-code-credentials:/home/node/.claude node:20 claude auth
 ```
 
 ## How It Works
@@ -75,69 +77,23 @@ ags
 
 ## Security Features
 
-- **Network Isolation**: All traffic goes through proxy
-- **Domain Whitelisting**: Only approved domains (GitHub, Anthropic API, etc.)
-- **File System Isolation**: Agents confined to their worktree
-- **Hook Validation**: Pre/post action validation
-- **No Host Access**: Containers can't access host system
-
-## Terminal User Interface
-
-The interactive Terminal User Interface provides a modern agent management experience:
-
-```bash
-ags  # Launch TUI
-```
-
-**TUI Features:**
-- **Real-time monitoring**: Auto-refreshing agent status table
-- **Vim-style commands**: `:quit`, `:diff`, `:restart`, `:cleanup`
-- **Fullscreen diff viewer**: Syntax-highlighted git diffs with scrolling
-- **Seamless interaction**: Type anywhere to enter goals, arrows to navigate
-- **Agent restart**: Re-run existing agents with same goals
-- **Status indicators**: Color-coded agent states (running, done, failed)
-
-**TUI Shortcuts:**
-- `Enter` - Start agent (or view diff if input empty)
-- `:d` - View diff for selected agent
-- `:r` - Restart selected agent  
-- `:c` - Clean up all agents
-- `:q` - Quit
-- `Ctrl+C` - Clear input
-- `↑/↓` - Navigate table (when input empty or starts with `:`)
-
-## Examples
-
-### TUI Workflow
-```bash
-# Launch TUI
-ags
-
-# In TUI:
-# 1. Type: "Write unit tests for the auth module" → Enter
-# 2. Watch agent execute in real-time
-# 3. When done, press Enter (empty input) to view diff
-# 4. Use :r to restart if needed
-# 5. Use :c to cleanup when satisfied
-```
+- **File System Isolation**: Agents run against a worktree copy of your project
+- **No Host Access**: Agents run in isolated containers
+- **Network Isolation**: No network access except for our proxy
+- **Domain Whitelisting**: The proxy only allows access to pre-approved domains (GitHub, Anthropic API, etc.)
 
 ## Configuration
 
 ### Whitelisted Domains
-Edit `tinyproxy-whitelist` to add domains:
-```
-api.anthropic.com
-github.com
-npmjs.org
-# Add your domains here
-```
+Edit [`tinyproxy-whitelist`](tinyproxy-whitelist) to add domains.
 
 ### Hooks
-Validation hooks in `hooks/`:
-- `pre-bash`: Validate shell commands
-- `pre-writes`: Validate file modifications
-- `post-writes`: After file changes
-- `post-stop`: Cleanup actions
+Hooks in `hooks/`:
+- [`pre-any`](hooks/pre-any): Logs all tool usage
+- [`pre-bash`](hooks/pre-bash): Bash command hooks
+- [`pre-writes`](hooks/pre-writes): File modification hooks
+- [`post-writes`](hooks/post-writes): After file changes
+- [`post-stop`](hooks/post-stop): Cleanup actions
 
 ## Troubleshooting
 
@@ -161,27 +117,27 @@ ags cleanup
 ```
 agent-process/
 ├── src/                   # Modular Python source
-│   ├── main.py           # CLI interface
-│   ├── agent.py          # Agent orchestration
-│   ├── workspace.py      # Git/Docker management
-│   ├── diff.py           # Diff operations
-│   ├── log.py            # Log formatting
-│   ├── *_db.py           # Database modules
-│   └── tui/              # Terminal User Interface
-│       └── app.py        # Textual-based TUI
+│   ├── main.py            # CLI interface
+│   ├── agent.py           # Agent orchestration
+│   ├── workspace.py       # Git/Docker management
+│   ├── diff.py            # Diff operations
+│   ├── log.py             # Log formatting
+│   ├── *_db.py            # Database modules
+│   └── tui/               # Terminal User Interface
+│       └── app.py         # Textual-based TUI
 ├── requirements.txt       # Dependencies (click, docker, rich)
 ├── bin/
-│   ├── ags               # CLI wrapper
-│   └── ags-test          # Test script
+│   ├── ags                # CLI wrapper
+│   └── ags-test           # Test script
 ├── hooks/                 # Validation scripts
 ├── certs/                 # SSL certificates
 ├── Dockerfile.agent       # Claude Code container
 ├── Dockerfile.proxy       # Proxy container
 ├── tinyproxy-whitelist    # Allowed domains
-└── example/              # Sample project
+└── example/               # Sample project
 ```
 
 ## License
 
-MIT License - see LICENSE file for details.
-
+This is a reference implementation on how to implement an agent sandbox.
+It is not licensed under any open source license.
