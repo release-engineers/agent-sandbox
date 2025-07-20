@@ -52,17 +52,15 @@ start_container() {
         docker rm "$CONTAINER_NAME" || true
     fi
     
-    docker volume create claude-code-bashhistory || true
-    docker volume create claude-code-config || true
-    docker volume create claude-code-credentials || true
-    docker volume create claude-code-json || true
+    # Create persistent volumes for Claude Code data
+    docker volume create claude-code-credentials || true    # Authentication credentials
+    docker volume create claude-code-json || true           # Claude JSON config
     
     echo "Starting container $CONTAINER_NAME..."
     docker run --rm \
         --name "$CONTAINER_NAME" \
         --network "$NETWORK_NAME" \
         --mount "type=bind,source=$(realpath "$WORKSPACE_DIR"),target=/workspace" \
-        --mount "type=volume,source=claude-code-bashhistory,target=/commandhistory" \
         --mount "type=volume,source=claude-code-credentials,target=/home/node/.claude" \
         --mount "type=volume,source=claude-code-json,target=/home/node/.claude.json" \
         --env "HTTPS_PROXY=http://172.20.0.10:3128" \

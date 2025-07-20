@@ -8,7 +8,7 @@ set -euo pipefail
 echo "Post-stop hook: Claude Code session ended" >&2
 
 # Add cleanup logic here
-# This could integrate with your main.sh quality controls and metrics
+# This integrates with the agent quality controls and metrics
 
 # Example: Generate session report
 echo "Session completed at: $(date)" >&2

@@ -10,14 +10,11 @@ RUN apt update && apt install -y \
     sudo \
     fzf \
     zsh \
-    man-db \
     unzip \
-    gnupg2 \
     gh \
     curl \
     wget \
     vim \
-    nano \
     jq \
     && apt clean \
     && rm -rf /var/lib/apt/lists/*
@@ -26,22 +23,13 @@ RUN apt update && apt install -y \
 RUN mkdir -p /usr/local/share/npm-global && \
     chown -R node:node /usr/local/share
 
-ARG USERNAME=node
-
 # Add node user to sudoers
 RUN echo "node ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
 
-# Persist bash history
-RUN SNIPPET="export PROMPT_COMMAND='history -a' && export HISTFILE=/commandhistory/.bash_history" \
-    && mkdir /commandhistory \
-    && touch /commandhistory/.bash_history \
-    && chown -R $USERNAME /commandhistory
 
 # Set environment variables
-ENV DEVCONTAINER=true
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 ENV CLAUDE_CONFIG_DIR="/home/node/.claude"
-ENV POWERLEVEL9K_DISABLE_GITSTATUS="true"
 
 # Create workspace and config directories
 RUN mkdir -p /workspace /home/node/.claude /hooks && \
@@ -60,12 +48,6 @@ COPY certs/proxy.crt /usr/local/share/ca-certificates/proxy.crt
 # Update CA certificates to include proxy certificate
 RUN update-ca-certificates
 
-# Install git-delta for better git diffs
-RUN ARCH=$(dpkg --print-architecture) && \
-    wget "https://github.com/dandavison/delta/releases/download/0.18.2/git-delta_0.18.2_${ARCH}.deb" && \
-    dpkg -i "git-delta_0.18.2_${ARCH}.deb" && \
-    rm "git-delta_0.18.2_${ARCH}.deb"
-
 # Set up non-root user
 USER node
 
@@ -75,9 +57,6 @@ ENV PATH=$PATH:/usr/local/share/npm-global/bin
 
 # Install Claude Code CLI
 RUN npm install -g @anthropic-ai/claude-code
-
-# Set the default shell to zsh
-SHELL ["/bin/zsh", "-c"]
 
 WORKDIR /workspace
 

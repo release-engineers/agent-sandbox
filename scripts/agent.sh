@@ -166,9 +166,7 @@ auth_claude() {
         docker rm "$auth_container" || true
     fi
     
-    # Create volumes if they don't exist
-    docker volume create claude-code-credentials || true
-    docker volume create claude-code-json || true
+    # Volumes are created in agent-container.sh
     
     # Run temporary container for authentication
     echo "Starting authentication container..."

@@ -10,7 +10,7 @@ echo "Pre-writes hook: Validating file operation on: $*" >&2
 # Add validation logic here
 
 # Check for dependency/technology whitelist validation
-# This would integrate with your main.sh validation requirements
+# This integrates with the agent validation requirements
 
 # Allow the operation to proceed
 exit 0
