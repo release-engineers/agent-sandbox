@@ -1,180 +1,80 @@
-# Agent Process - Docker-based Claude Code Workflow
+# Agent Process - Sandbox for AI Coding Agents
 
-A containerized workflow system for running Claude Code with network isolation, HTTP proxy, and git worktree management.
+A sandbox for running Claude Code AI agents in isolated environments.
 
-## Overview
+## What It Does
 
-This system provides a secure, isolated environment for running Claude Code agents with:
-- Docker containers with network restrictions
-- HTTP proxy with domain whitelisting
-- Git worktree management for parallel development
-- Pre/post execution hooks for validation
-- Self-signed certificate management
+Creates **isolated workspaces** where each Claude Code agent:
+- Gets its own git worktree (parallel development branch)
+- Runs in a Docker container with network restrictions  
+- Has a specific goal to accomplish
+- Can only access whitelisted external domains through a proxy
 
 ## Quick Start
 
 ### Prerequisites
-- Docker installed and running
-- Git repository with committed changes
-- Node.js (for certificate generation)
+- Docker running
+- Git repository
+- A Claude Code subscription
 
-### Basic Usage
-
-1. **From any git project directory:**
-   ```bash
-   # Start an agent with worktree + container
-   /path/to/agent-process/scripts/agent.sh start my-feature
-   
-   # Stop and cleanup
-   /path/to/agent-process/scripts/agent.sh stop my-feature
-   
-   # List active agents
-   /path/to/agent-process/scripts/agent.sh list
-   ```
-
-2. **From the example project:**
-   ```bash
-   cd example/
-   ../scripts/agent.sh start hello-world
-   ```
-
-## Architecture
-
-### Components
-
-- **Agent Container** (`claude-code-agent`) - Runs Claude Code in isolated network
-- **Proxy Container** (`container-proxy.local`) - Provides HTTP proxy with domain filtering
-- **Git Worktrees** - Parallel development environments
-- **Hooks System** - Pre/post execution validation
-
-### Network Isolation
-
-The agent container can only access external resources through the HTTP proxy, which filters requests to allowed domains. See [tinyproxy-whitelist](tinyproxy-whitelist) for an actual list.
-
-## Scripts
-
-### `scripts/agent.sh`
-Main orchestration script for the complete workflow.
+### Usage
 
 ```bash
-# Commands
-agent.sh start <name>    # Create worktree and start container
-agent.sh stop <name>     # Stop container and remove worktree
-agent.sh list            # List active agents
+# Start an AI agent with a specific goal
+./scripts/agent.sh start feature-name "Add user authentication to the login page"
+
+# List active agents
+./scripts/agent.sh list
+
+# Stop specific agent
+./scripts/agent.sh stop feature-name
+
+# Clean up everything
+./scripts/agent.sh cleanup
 ```
 
-### `scripts/worktree.sh`
-Git worktree management.
-
+### Example
 ```bash
-# Commands
-worktree.sh create <name>  # Create new worktree
-worktree.sh remove <name>  # Remove worktree
-worktree.sh list           # List all worktrees
+cd example/
+../scripts/agent.sh start docs "Add documentation to the main.go file"
 ```
 
-### `scripts/container.sh`
-Docker container management.
+## How It Works
 
-```bash
-# Usage
-container.sh [container-name]  # Start container with optional name
-```
+1. **Creates isolated git worktree** in `../worktrees/<name>`
+2. **Launches secure containers** (agent + proxy) with network restrictions
+3. **Runs Claude Code CLI** with your specified goal
+4. **Validates all actions** through hook system
+5. **Cleans up** when done
 
-## Configuration Files
+## Security Features
 
-### Docker Images
-- `Dockerfile.agent` - Claude Code agent container
-- `Dockerfile.proxy` - Tinyproxy container
+- **Network Isolation**: Agents can't access arbitrary external resources
+- **Domain Whitelisting**: Only approved domains accessible (Anthropic API, GitHub, etc.)
+- **Hook Validation**: All agent actions go through validation hooks
+- **Goal-Scoped Execution**: Each agent has a specific, limited objective
 
-### Proxy Configuration
-- `tinyproxy.conf` - Tinyproxy settings
-- `tinyproxy-whitelist` - Allowed domains
+## Use Cases
 
-### Certificates
-- `certs/proxy.crt` - Self-signed certificate
-- `certs/proxy.key` - Private key
-
-### Hooks
-- `hooks/pre-bash` - Validates bash commands
-- `hooks/pre-writes` - Validates file operations
-- `hooks/post-writes` - Post-operation actions
-- `hooks/post-stop` - Cleanup on stop
+- **Parallel Development**: Run multiple agents on different features simultaneously
+- **Safe AI Development**: Let AI agents work on code with security constraints
+- **Experimentation**: Test AI agents on code changes without affecting main branch
+- **Code Review**: Have agents work on specific review tasks in isolation
 
 ## Directory Structure
 
 ```
 agent-process/
 ├── scripts/
-│   ├── agent.sh          # Main workflow orchestrator
-│   ├── worktree.sh       # Git worktree management
-│   └── container.sh      # Docker container management
-├── hooks/                # Execution hooks
-├── certs/                # SSL certificates
-├── example/              # Sample Go project
-├── Dockerfile.agent      # Agent container definition
-├── Dockerfile.proxy      # Proxy container definition
-├── tinyproxy.conf        # Proxy configuration
-├── tinyproxy-whitelist   # Allowed domains
-└── FEATURES.md           # Implementation status
+│   ├── agent.sh           # Main orchestrator
+│   ├── agent-workspace.sh # Git worktree management
+│   ├── agent-container.sh # Container management
+│   └── agent-proxy.sh     # Proxy management
+├── hooks/                 # Validation hooks
+├── example/               # Sample project
+├── Dockerfile.agent       # Agent container
+├── Dockerfile.proxy       # Proxy container
+└── tinyproxy-whitelist    # Allowed domains
 ```
 
-## Workflow
-
-1. **Agent Start Process:**
-   - Creates git worktree in `../worktrees/<name>`
-   - Changes to worktree directory
-   - Builds Docker images if needed
-   - Creates isolated network
-   - Starts proxy container with external access
-   - Starts agent container with network restrictions
-   - Mounts worktree as `/workspace`
-
-2. **Agent Stop Process:**
-   - Stops and removes agent container
-   - Removes git worktree
-   - Cleans up resources
-
-## Security Features
-
-- **Network Isolation**: Agent container cannot access external networks directly
-- **Domain Filtering**: HTTP proxy restricts access to whitelisted domains
-- **Certificate Trust**: Self-signed certificates embedded in system CA bundle
-- **Hook System**: Pre/post execution validation and quality controls
-- **Volume Isolation**: Persistent volumes for bash history and Claude config
-
-## Example Project
-
-The `example/` directory contains a minimal Go Hello World application that demonstrates the workflow:
-
-```go
-package main
-
-import "fmt"
-
-func main() {
-    fmt.Println("Hello, World!")
-}
-```
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Docker not running**: Ensure Docker daemon is started
-2. **Not in git repository**: Run from within a git project
-3. **Port conflicts**: Proxy uses port 3128
-4. **Certificate issues**: Rebuild images to refresh certificates
-
-### Debugging
-
-```bash
-# Check container logs
-docker logs <container-name>
-
-# Check proxy connectivity
-docker exec <container-name> curl -I http://172.20.0.10:3128
-
-# List networks
-docker network ls
-```
+This is essentially a **"sandbox for AI coding agents"** - letting you safely run multiple Claude Code instances on different tasks with security guardrails and isolation.

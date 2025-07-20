@@ -4,8 +4,6 @@ set -euo pipefail
 
 # Configuration
 IMAGE_NAME="claude-code-agent"
-PROXY_IMAGE_NAME="claude-code-proxy"
-PROXY_CONTAINER_NAME="container-proxy.local"
 NETWORK_NAME="agent-network"
 CONTAINER_NAME="${1:-claude-code-agent}"
 
@@ -28,71 +26,19 @@ if ! docker info > /dev/null 2>&1; then
     exit 1
 fi
 
-# Build the Docker images
-build_images() {
+# Build the agent Docker image
+build_agent_image() {
     local script_dir
     script_dir="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
     local dockerfile_agent_path="$script_dir/../Dockerfile.agent"
-    local dockerfile_proxy_path="$script_dir/../Dockerfile.proxy"
     
     if [[ ! -f "$dockerfile_agent_path" ]]; then
         echo "Error: Dockerfile.agent not found at $dockerfile_agent_path" >&2
         exit 1
     fi
     
-    if [[ ! -f "$dockerfile_proxy_path" ]]; then
-        echo "Error: Dockerfile.proxy not found at $dockerfile_proxy_path" >&2
-        exit 1
-    fi
-    
-    # Build proxy image
-    echo "Building proxy image..."
-    docker build -t "$PROXY_IMAGE_NAME" -f "$dockerfile_proxy_path" "$script_dir/.."
-    
-    # Build agent image
     echo "Building agent image..."
     docker build -t "$IMAGE_NAME" -f "$dockerfile_agent_path" "$script_dir/.."
-}
-
-# Create restricted network
-create_network() {
-    # Skip if network already exists
-    if docker network inspect "$NETWORK_NAME" > /dev/null 2>&1; then
-        echo "Network $NETWORK_NAME already exists"
-        return 0
-    fi
-    
-    echo "Creating network $NETWORK_NAME..."
-    # Create isolated network (internal - no external access)
-    docker network create "$NETWORK_NAME" \
-        --internal \
-        --driver bridge \
-        --subnet 172.20.0.0/16 \
-        --gateway 172.20.0.1
-}
-
-# Start the proxy container
-start_proxy_container() {
-    # Skip if proxy container already exists
-    if docker ps -a --filter "name=$PROXY_CONTAINER_NAME" --format "{{.Names}}" | grep -q "^$PROXY_CONTAINER_NAME$"; then
-        if ! docker ps --filter "name=$PROXY_CONTAINER_NAME" --format "{{.Names}}" | grep -q "^$PROXY_CONTAINER_NAME$"; then
-            echo "Starting existing proxy container..."
-            docker start "$PROXY_CONTAINER_NAME"
-        else
-            echo "Proxy container already running"
-        fi
-        return 0
-    fi
-    
-    echo "Starting proxy container..."
-    # Start proxy on default bridge network (has external access)
-    docker run -d \
-        --name "$PROXY_CONTAINER_NAME" \
-        -p 3128:3128 \
-        "$PROXY_IMAGE_NAME"
-    
-    # Connect proxy to internal network so agent can reach it
-    docker network connect "$NETWORK_NAME" "$PROXY_CONTAINER_NAME" --ip 172.20.0.10
 }
 
 # Start the agent container
@@ -112,7 +58,7 @@ start_container() {
     docker volume create claude-code-json || true
     
     echo "Starting container $CONTAINER_NAME..."
-    docker run -d \
+    docker run --rm \
         --name "$CONTAINER_NAME" \
         --network "$NETWORK_NAME" \
         --mount "type=bind,source=$(realpath "$WORKSPACE_DIR"),target=/workspace" \
@@ -129,26 +75,31 @@ start_container() {
         --user node \
         --workdir /workspace \
         "$IMAGE_NAME"
-    
-    echo "Container $CONTAINER_NAME started successfully"
 }
 
 # Main execution
 main() {
     local goal="${2:-}"
+    local script_dir
+    script_dir="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
+    
     validate_git_project
-    build_images
-    create_network
-    start_proxy_container
+    
+    # Setup proxy infrastructure
+    "$script_dir/agent-proxy.sh" start
+    
+    # Build agent image and start container
+    build_agent_image
     start_container "$1" "$goal"
 }
 
 # Parse command line arguments
 case "${1:-}" in
     -h|--help)
-        echo "Usage: $0 [container-name]"
+        echo "Usage: $0 [container-name] [goal]"
         echo "Sets up a Docker container for Claude Code"
         echo "  container-name: Name for the container (default: claude-code-agent)"
+        echo "  goal: Goal to pass to Claude Code"
         exit 0
         ;;
     *)

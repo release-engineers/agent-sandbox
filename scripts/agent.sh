@@ -2,13 +2,76 @@
 
 set -euo pipefail
 
+# Run all pre-flight checks at startup
+check_docker() {
+    if ! docker info > /dev/null 2>&1; then
+        echo "ERROR: Docker is not running" >&2
+        echo "" >&2
+        echo "Please start Docker Desktop or Docker daemon and try again." >&2
+        echo "You can verify Docker is running with: docker info" >&2
+        exit 1
+    fi
+}
+
+check_git_repo() {
+    if ! git rev-parse --show-toplevel > /dev/null 2>&1; then
+        echo "ERROR: Not in a git repository" >&2
+        echo "" >&2
+        echo "Please run this command from within a git repository." >&2
+        echo "To initialize a git repository, run: git init" >&2
+        exit 1
+    fi
+}
+
+check_port_conflicts() {
+    local port=3128
+    if command -v lsof > /dev/null && lsof -i :$port > /dev/null 2>&1; then
+        echo "WARNING: Port $port is already in use" >&2
+        echo "" >&2
+        echo "The HTTP proxy uses port $port. If you encounter issues, please:" >&2
+        echo "1. Stop any service using port $port" >&2
+        echo "2. Or run: $0 cleanup" >&2
+        echo "" >&2
+    fi
+}
+
+check_claude_auth() {
+    if ! docker volume inspect claude-code-credentials > /dev/null 2>&1; then
+        echo "WARNING: Claude Code authentication may not be set up" >&2
+        echo "" >&2
+        echo "If you encounter authentication issues, please run:" >&2
+        echo "  $0 auth" >&2
+        echo "" >&2
+        return 1
+    fi
+    return 0
+}
+
+# Run checks for all commands except help
+case "${1:-}" in
+    ""|-h|--help)
+        # Skip checks for help
+        ;;
+    *)
+        check_docker
+        check_git_repo
+        check_port_conflicts
+        check_claude_auth || true  # Don't fail on auth warning
+        ;;
+esac
+
 # Validate goal is provided
 validate_goal() {
     local goal="${1:-}"
     
     if [[ -z "$goal" ]]; then
-        echo "No goal provided" >&2
+        echo "ERROR: No goal provided" >&2
+        echo "" >&2
         echo "Usage: $0 start <agent-name> <goal>" >&2
+        echo "" >&2
+        echo "Example:" >&2
+        echo "  $0 start my-feature 'Add user authentication to the login page'" >&2
+        echo "  $0 start docs 'Add documentation to all functions in main.go'" >&2
         exit 1
     fi
     
@@ -16,15 +79,6 @@ validate_goal() {
 }
 
 
-# Start Claude Code in the container
-start_claude_code() {
-    local agent_name="$1"
-    local goal="$2"
-    
-    echo "Starting Claude Code with goal: $goal"
-    echo "Claude Code will start directly in the container"
-    echo "Goal will be passed as environment variable"
-}
 
 # Main agent workflow script - creates worktree and container
 start_agent() {
@@ -46,17 +100,18 @@ start_agent() {
     # Change to worktree directory
     cd "$worktree_path"
     
-    # Start container with agent name and goal
-    echo "Starting container..."
+    echo "Starting agent for: $agent_name"
+    echo "Worktree: $worktree_path"
+    echo "Goal: $goal"
+    echo ""
+    
+    # Start container with agent name and goal - this will run synchronously
     "$script_dir/agent-container.sh" "$agent_name" "$goal"
     
-    # Claude Code starts automatically with the goal
-    start_claude_code "$agent_name" "$goal"
-    
-    echo "Agent '$agent_name' started successfully"
-    echo "Worktree: $worktree_path"
-    echo "Container: $agent_name"
-    echo "Goal: $goal"
+    # When this returns, the agent has completed
+    echo ""
+    echo "Agent completed. Cleaning up..."
+    stop_agent "$agent_name"
 }
 
 # Stop agent workflow - removes container and worktree
@@ -103,11 +158,6 @@ auth_claude() {
     local auth_container="claude-auth-temp"
     local git_root
     git_root="$(git rev-parse --show-toplevel 2>/dev/null)"
-    
-    if [[ -z "$git_root" ]]; then
-        echo "Not a git repository" >&2
-        exit 1
-    fi
     
     # Remove existing auth container if it exists
     if docker ps -a --filter "name=$auth_container" --format "{{.Names}}" | grep -q "^$auth_container$"; then
@@ -159,18 +209,8 @@ cleanup_all() {
         echo "No containers to clean up"
     fi
     
-    # Remove proxy container if it exists
-    if docker ps -a --filter "name=container-proxy.local" --format "{{.Names}}" | grep -q "^container-proxy.local$"; then
-        echo "Removing proxy container..."
-        docker stop container-proxy.local || true
-        docker rm container-proxy.local || true
-    fi
-    
-    # Remove network if it exists
-    if docker network inspect agent-network > /dev/null 2>&1; then
-        echo "Removing network..."
-        docker network rm agent-network || true
-    fi
+    # Cleanup proxy infrastructure
+    "$script_dir/agent-proxy.sh" cleanup
     
     # Remove all worktrees
     echo "Removing all worktrees..."
@@ -197,13 +237,6 @@ case "${1:-}" in
         fi
         start_agent "$2" "${3:-}"
         ;;
-    stop)
-        if [[ -z "${2:-}" ]]; then
-            echo "Usage: $0 stop <agent-name>" >&2
-            exit 1
-        fi
-        stop_agent "$2"
-        ;;
     list)
         list_agents
         ;;
@@ -213,11 +246,10 @@ case "${1:-}" in
     cleanup)
         cleanup_all
         ;;
-    -h|--help)
+    ""|-h|--help)
         echo "Usage: $0 <command> [args]"
         echo "Commands:"
-        echo "  start <name> <goal>  Create worktree and start container for agent"
-        echo "  stop <name>          Stop container and remove worktree for agent"
+        echo "  start <name> <goal>  Run agent with goal, wait for completion, then cleanup"
         echo "  list                 List active agents (worktrees and containers)"
         echo "  auth                 Authenticate Claude Code (run once)"
         echo "  cleanup              Clean up all agents, containers, and worktrees"
