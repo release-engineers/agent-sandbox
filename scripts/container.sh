@@ -7,6 +7,7 @@ IMAGE_NAME="claude-code-agent"
 PROXY_IMAGE_NAME="claude-code-proxy"
 PROXY_CONTAINER_NAME="container-proxy.local"
 NETWORK_NAME="agent-network"
+CONTAINER_NAME="${1:-claude-code-agent}"
 
 # Validate git project and set workspace to git root
 validate_git_project() {
@@ -82,7 +83,7 @@ start_container() {
     docker volume create claude-code-config > /dev/null 2>&1 || true
     
     docker run -d \
-        --name "claude-code-agent" \
+        --name "$CONTAINER_NAME" \
         --network "$NETWORK_NAME" \
         --ip 172.20.0.20 \
         --mount "type=bind,source=$(realpath "$WORKSPACE_DIR"),target=/workspace" \
@@ -111,8 +112,9 @@ main() {
 # Parse command line arguments
 case "${1:-}" in
     -h|--help)
-        echo "Usage: $0"
+        echo "Usage: $0 [container-name]"
         echo "Sets up a Docker container for Claude Code"
+        echo "  container-name: Name for the container (default: claude-code-agent)"
         exit 0
         ;;
     *)

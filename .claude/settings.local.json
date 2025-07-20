@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./scripts/container.sh:*)",
+      "Bash(docker stop:*)",
+      "Bash(docker inspect:*)",
+      "Bash(docker rm:*)",
+      "Bash(mkdir:*)",
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(chmod:*)"
+    ],
+    "deny": []
+  }
+}

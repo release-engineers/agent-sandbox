@@ -31,15 +31,17 @@ This document tracks the implementation status of features outlined in `main.sh`
 - **Network isolation** - Agent container restricted to internal network, proxy has dual access
 - **Certificate management** - Self-signed certificates embedded in containers during build
 
+### Git Worktree Management
+- **Git worktree setup** - `scripts/worktree.sh` creates and manages git worktrees for parallel sessions
+- **Worktree mounting** - Containers automatically mount worktree directories as `/workspace`
+- **Agent workflow orchestration** - `scripts/agent.sh` coordinates worktree creation and container startup
+- **Named container instances** - Each worktree gets its own named container for isolation
+
 ## ❌ Not Implemented Features
 
 ### Project Setup
 - **CLAUDE.md creation** - No automatic CLAUDE.md file generation with gitignore
 - **Goal input from user** - No interactive goal collection
-
-### Git Worktree Management
-- **Git worktree setup** - No git worktree creation for parallel sessions
-- **Worktree mounting** - Currently mounts main project, not worktrees
 
 ### Validation & Quality Controls
 - **Dependency whitelist validation** - No pre-tool dependency checking
@@ -74,10 +76,8 @@ This document tracks the implementation status of features outlined in `main.sh`
 ### High Priority (Core Functionality)
 1. Interactive goal selection
 2. CLAUDE.md automatic generation
-3. Git worktree setup for parallel sessions
-4. Background Claude Code execution with goal
+3. Background Claude Code execution with goal
 
 ### Medium Priority (Enhanced Security)
-1. Network proxy with domain whitelisting
-2. Dependency and technology validation
-3. Basic quality metrics (vulnerabilities, secrets)
+1. Dependency and technology validation
+2. Basic quality metrics (vulnerabilities, secrets)
