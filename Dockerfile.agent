@@ -28,6 +28,9 @@ RUN mkdir -p /usr/local/share/npm-global && \
 
 ARG USERNAME=node
 
+# Add node user to sudoers
+RUN echo "node ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
 # Persist bash history
 RUN SNIPPET="export PROMPT_COMMAND='history -a' && export HISTFILE=/commandhistory/.bash_history" \
     && mkdir /commandhistory \
@@ -70,10 +73,13 @@ USER node
 ENV NPM_CONFIG_PREFIX=/usr/local/share/npm-global
 ENV PATH=$PATH:/usr/local/share/npm-global/bin
 
+# Install Claude Code CLI
+RUN npm install -g @anthropic-ai/claude-code
+
 # Set the default shell to zsh
 SHELL ["/bin/zsh", "-c"]
 
 WORKDIR /workspace
 
-# Keep container running
-CMD ["tail", "-f", "/dev/null"]
+# Start Claude Code directly with goal from environment
+CMD ["sh", "-c", "sudo chown -R node:node /workspace && claude -p \"$CLAUDE_GOAL\" --dangerously-skip-permissions"]

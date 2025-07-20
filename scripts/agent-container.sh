@@ -36,27 +36,33 @@ build_images() {
     local dockerfile_proxy_path="$script_dir/../Dockerfile.proxy"
     
     if [[ ! -f "$dockerfile_agent_path" ]]; then
-        echo "Dockerfile.agent not found" >&2
+        echo "Error: Dockerfile.agent not found at $dockerfile_agent_path" >&2
         exit 1
     fi
     
     if [[ ! -f "$dockerfile_proxy_path" ]]; then
-        echo "Dockerfile.proxy not found" >&2
+        echo "Error: Dockerfile.proxy not found at $dockerfile_proxy_path" >&2
         exit 1
     fi
     
     # Build proxy image
+    echo "Building proxy image..."
     docker build -t "$PROXY_IMAGE_NAME" -f "$dockerfile_proxy_path" "$script_dir/.."
     
     # Build agent image
+    echo "Building agent image..."
     docker build -t "$IMAGE_NAME" -f "$dockerfile_agent_path" "$script_dir/.."
 }
 
 # Create restricted network
 create_network() {
-    # Remove existing network if it exists
-    docker network rm "$NETWORK_NAME" 2>/dev/null || true
+    # Skip if network already exists
+    if docker network inspect "$NETWORK_NAME" > /dev/null 2>&1; then
+        echo "Network $NETWORK_NAME already exists"
+        return 0
+    fi
     
+    echo "Creating network $NETWORK_NAME..."
     # Create isolated network (internal - no external access)
     docker network create "$NETWORK_NAME" \
         --internal \
@@ -67,6 +73,18 @@ create_network() {
 
 # Start the proxy container
 start_proxy_container() {
+    # Skip if proxy container already exists
+    if docker ps -a --filter "name=$PROXY_CONTAINER_NAME" --format "{{.Names}}" | grep -q "^$PROXY_CONTAINER_NAME$"; then
+        if ! docker ps --filter "name=$PROXY_CONTAINER_NAME" --format "{{.Names}}" | grep -q "^$PROXY_CONTAINER_NAME$"; then
+            echo "Starting existing proxy container..."
+            docker start "$PROXY_CONTAINER_NAME"
+        else
+            echo "Proxy container already running"
+        fi
+        return 0
+    fi
+    
+    echo "Starting proxy container..."
     # Start proxy on default bridge network (has external access)
     docker run -d \
         --name "$PROXY_CONTAINER_NAME" \
@@ -79,34 +97,50 @@ start_proxy_container() {
 
 # Start the agent container
 start_container() {
-    docker volume create claude-code-bashhistory > /dev/null 2>&1 || true
-    docker volume create claude-code-config > /dev/null 2>&1 || true
+    local goal="${2:-}"
     
+    # Remove existing container if it exists
+    if docker ps -a --filter "name=$CONTAINER_NAME" --format "{{.Names}}" | grep -q "^$CONTAINER_NAME$"; then
+        echo "Removing existing container $CONTAINER_NAME..."
+        docker stop "$CONTAINER_NAME" || true
+        docker rm "$CONTAINER_NAME" || true
+    fi
+    
+    docker volume create claude-code-bashhistory || true
+    docker volume create claude-code-config || true
+    docker volume create claude-code-credentials || true
+    docker volume create claude-code-json || true
+    
+    echo "Starting container $CONTAINER_NAME..."
     docker run -d \
         --name "$CONTAINER_NAME" \
         --network "$NETWORK_NAME" \
-        --ip 172.20.0.20 \
         --mount "type=bind,source=$(realpath "$WORKSPACE_DIR"),target=/workspace" \
         --mount "type=volume,source=claude-code-bashhistory,target=/commandhistory" \
-        --mount "type=volume,source=claude-code-config,target=/home/node/.claude" \
+        --mount "type=volume,source=claude-code-credentials,target=/home/node/.claude" \
+        --mount "type=volume,source=claude-code-json,target=/home/node/.claude.json" \
         --env "HTTPS_PROXY=http://172.20.0.10:3128" \
         --env "HTTP_PROXY=http://172.20.0.10:3128" \
         --env "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt" \
         --env "NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt" \
         --env "CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt" \
         --env "REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt" \
+        --env "CLAUDE_GOAL=$goal" \
         --user node \
         --workdir /workspace \
         "$IMAGE_NAME"
+    
+    echo "Container $CONTAINER_NAME started successfully"
 }
 
 # Main execution
 main() {
+    local goal="${2:-}"
     validate_git_project
     build_images
     create_network
     start_proxy_container
-    start_container
+    start_container "$1" "$goal"
 }
 
 # Parse command line arguments
@@ -118,6 +152,6 @@ case "${1:-}" in
         exit 0
         ;;
     *)
-        main
+        main "$@"
         ;;
 esac

@@ -4,11 +4,23 @@
       "Bash(./scripts/container.sh:*)",
       "Bash(docker stop:*)",
       "Bash(docker inspect:*)",
+      "Bash(docker ps:*)",
       "Bash(docker rm:*)",
+      "Bash(docker logs:*)",
+      "Bash(docker exec:*)",
       "Bash(mkdir:*)",
       "Bash(git status:*)",
       "Bash(git log:*)",
-      "Bash(chmod:*)"
+      "Bash(git worktree list:*)",
+      "Bash(git worktree remove:*)",
+      "Bash(chmod:*)",
+      "WebFetch(domain:docs.anthropic.com)",
+      "Bash(mv:*)",
+      "Bash(ls:*)",
+      "Bash(docker network inspect:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(../scripts/agent.sh:*)",
+      "Bash(git add:*)"
     ],
     "deny": []
   }
