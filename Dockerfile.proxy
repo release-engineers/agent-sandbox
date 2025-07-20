@@ -1,0 +1,15 @@
+FROM alpine:latest
+
+# Install tinyproxy
+RUN apk add --no-cache tinyproxy
+
+# Copy tinyproxy configuration
+COPY tinyproxy.conf /etc/tinyproxy/tinyproxy.conf
+COPY tinyproxy-whitelist /etc/tinyproxy/whitelist
+
+# Create directory for PID file
+RUN mkdir -p /var/run/tinyproxy
+
+EXPOSE 3128
+
+CMD ["tinyproxy", "-d"]

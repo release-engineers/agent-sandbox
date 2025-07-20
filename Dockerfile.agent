@@ -1,0 +1,79 @@
+FROM node:20
+
+ENV TZ="Europe/Amsterdam"
+
+# Install basic development tools
+RUN apt update && apt install -y \
+    less \
+    git \
+    procps \
+    sudo \
+    fzf \
+    zsh \
+    man-db \
+    unzip \
+    gnupg2 \
+    gh \
+    curl \
+    wget \
+    vim \
+    nano \
+    jq \
+    && apt clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Ensure default node user has access to /usr/local/share
+RUN mkdir -p /usr/local/share/npm-global && \
+    chown -R node:node /usr/local/share
+
+ARG USERNAME=node
+
+# Persist bash history
+RUN SNIPPET="export PROMPT_COMMAND='history -a' && export HISTFILE=/commandhistory/.bash_history" \
+    && mkdir /commandhistory \
+    && touch /commandhistory/.bash_history \
+    && chown -R $USERNAME /commandhistory
+
+# Set environment variables
+ENV DEVCONTAINER=true
+ENV NODE_OPTIONS="--max-old-space-size=4096"
+ENV CLAUDE_CONFIG_DIR="/home/node/.claude"
+ENV POWERLEVEL9K_DISABLE_GITSTATUS="true"
+
+# Create workspace and config directories
+RUN mkdir -p /workspace /home/node/.claude /hooks && \
+    chown -R node:node /workspace /home/node/.claude /hooks
+
+# Copy hook scripts
+COPY hooks/ /hooks/
+RUN chmod +x /hooks/*
+
+# Setup certificate handling for proxy
+RUN mkdir -p /usr/local/share/ca-certificates
+
+# Copy pre-generated proxy certificate
+COPY certs/proxy.crt /usr/local/share/ca-certificates/proxy.crt
+
+# Update CA certificates to include proxy certificate
+RUN update-ca-certificates
+
+# Install git-delta for better git diffs
+RUN ARCH=$(dpkg --print-architecture) && \
+    wget "https://github.com/dandavison/delta/releases/download/0.18.2/git-delta_0.18.2_${ARCH}.deb" && \
+    dpkg -i "git-delta_0.18.2_${ARCH}.deb" && \
+    rm "git-delta_0.18.2_${ARCH}.deb"
+
+# Set up non-root user
+USER node
+
+# Install global packages
+ENV NPM_CONFIG_PREFIX=/usr/local/share/npm-global
+ENV PATH=$PATH:/usr/local/share/npm-global/bin
+
+# Set the default shell to zsh
+SHELL ["/bin/zsh", "-c"]
+
+WORKDIR /workspace
+
+# Keep container running
+CMD ["tail", "-f", "/dev/null"]

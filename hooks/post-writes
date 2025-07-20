@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Post-writes hook - performs actions after file operations
+# Called after Write, Edit, or MultiEdit tool use
+
+set -euo pipefail
+
+# Log the completed file operation
+echo "Post-writes hook: File operation completed on: $*" >&2
+
+# Add post-operation quality controls here
+
+# Allow the operation to complete
+exit 0

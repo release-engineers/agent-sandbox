@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Pre-writes hook - validates file operations before execution
+# Called before Write, Edit, or MultiEdit tool use
+
+set -euo pipefail
+
+# Log the file operation
+echo "Pre-writes hook: Validating file operation on: $*" >&2
+
+# Add validation logic here
+
+# Check for dependency/technology whitelist validation
+# This would integrate with your main.sh validation requirements
+
+# Allow the operation to proceed
+exit 0

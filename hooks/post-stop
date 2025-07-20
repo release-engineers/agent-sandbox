@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Post-stop hook - performs cleanup actions when Claude Code stops
+# Called when Claude Code session ends
+
+set -euo pipefail
+
+# Log the stop event
+echo "Post-stop hook: Claude Code session ended" >&2
+
+# Add cleanup logic here
+# This could integrate with your main.sh quality controls and metrics
+
+# Example: Generate session report
+echo "Session completed at: $(date)" >&2
+
+# Example: Run final quality checks
+# - Check for uncommitted changes
+# - Validate final state
+# - Generate metrics report
+
+# Allow the stop to complete
+exit 0

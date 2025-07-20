@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Pre-bash hook - validates bash commands before execution
+# Called before any Bash tool use
+
+set -euo pipefail
+
+# Log the command being executed
+echo "Pre-bash hook: Validating command: $*" >&2
+
+# Add validation logic here
+
+# Allow the command to proceed
+exit 0
