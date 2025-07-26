@@ -1,0 +1,12 @@
+#!/bin/bash
+# Agent Sandbox (ags) - Wrapper script for agent.py
+
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Activate virtual environment
+source "$PROJECT_DIR/venv/bin/activate"
+
+# Run agent.py with all arguments
+exec "$PROJECT_DIR/agent.py" "$@"

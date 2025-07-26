@@ -270,7 +270,7 @@ class AgentManager:
 
 @click.group()
 def cli():
-    """Agent Process - Sandbox for Claude Code AI agents."""
+    """Agent Sandbox (AGS) - Sandbox for Claude Code AI agents."""
     pass
 
 

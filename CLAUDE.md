@@ -1,8 +1,8 @@
-# Agent Process - LLM Technical Documentation
+# Agent Sandbox (AGS) - LLM Technical Documentation
 
 ## Project Overview for LLMs
 
-Agent Process is a sandbox system for running Claude Code AI agents in isolated environments. This documentation provides technical details for LLMs working on or maintaining this project.
+Agent Sandbox (AGS) is a sandbox system for running Claude Code AI agents in isolated environments. This documentation provides technical details for LLMs working on or maintaining this project.
 
 **Key Point**: This system creates isolated workspaces where Claude Code agents can work safely without affecting the main codebase or accessing unauthorized resources.
 
@@ -16,7 +16,7 @@ Agent Process is a sandbox system for running Claude Code AI agents in isolated 
 
 ### Directory Structure
 ```
-agent-process/
+agent-sandbox/
 ├── hooks/                 # Validation hooks for agent actions
 ├── certs/                 # SSL certificates for proxy
 ├── example/               # Sample project for testing
@@ -33,6 +33,8 @@ agent-process/
 ### Starting an Agent
 ```bash
 ./agent.py start <agent-name> "<goal-description>"
+# Or if ags is in PATH:
+ags start <agent-name> "<goal-description>"
 ```
 - Creates git worktree at `../worktrees/<agent-name>`
 - Launches Docker containers (agent + proxy)
@@ -44,6 +46,10 @@ agent-process/
 ./agent.py list        # Show agent branches with committed changes
 ./agent.py cleanup     # Remove all agents and worktrees
 ./agent.py auth        # Authenticate with Claude Code
+# Or using ags:
+ags list               # Show agent branches with committed changes
+ags cleanup            # Remove all agents and worktrees
+ags auth               # Authenticate with Claude Code
 ```
 
 ## Technical Details
@@ -92,6 +98,7 @@ agent-process/
 ### Single Feature Development
 ```bash
 ./agent.py start auth-feature "Implement JWT authentication"
+# Or: ags start auth-feature "Implement JWT authentication"
 ```
 
 ### Parallel Development
@@ -99,11 +106,16 @@ agent-process/
 ./agent.py start ui-update "Modernize dashboard UI"
 ./agent.py start api-docs "Generate OpenAPI documentation"
 ./agent.py start test-coverage "Add unit tests for user service"
+# Or using ags:
+ags start ui-update "Modernize dashboard UI"
+ags start api-docs "Generate OpenAPI documentation"
+ags start test-coverage "Add unit tests for user service"
 ```
 
 ### Code Review Tasks
 ```bash
 ./agent.py start security-review "Review code for security vulnerabilities"
+# Or: ags start security-review "Review code for security vulnerabilities"
 ```
 
 ## Important Notes for LLMs
@@ -210,4 +222,8 @@ source ../venv/bin/activate
 ../agent.py start test "Simple test task"
 ../agent.py list
 ../agent.py stop test
+# Or if ags is in PATH:
+ags start test "Simple test task"
+ags list
+ags stop test
 ```

@@ -22,8 +22,6 @@
       "Bash(source venv/bin/activate)",
       "Bash(./agent.py stop:*)",
       "Bash(./agent.py list)",
-      "Bash(source:*)",
-      "Bash(../agent.py start test-commit \"Create a simple test file\")",
       "Bash(./agent.py stop:*)"
     ],
     "deny": []
