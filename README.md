@@ -13,39 +13,51 @@ Creates **isolated workspaces** where each Claude Code agent:
 ## Quick Start
 
 ### Prerequisites
+- Python 3.9+
 - Docker running
 - Git repository
 - A Claude Code subscription
 
+### Installation
+
+```bash
+# Install dependencies
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
 ### Usage
 
 ```bash
-# Start an AI agent with a specific goal
-./scripts/agent.sh start feature-name "Add user authentication to the login page"
+# Run an AI agent with a specific goal
+./agent.py start feature-name "Add user authentication to the login page"
 
-# List active agents
-./scripts/agent.sh list
-
-# Stop specific agent
-./scripts/agent.sh stop feature-name
+# List agent branches (with committed changes)
+./agent.py list
 
 # Clean up everything
-./scripts/agent.sh cleanup
+./agent.py cleanup
+
+# Authenticate with Claude Code (run once)
+./agent.py auth
 ```
 
 ### Example
 ```bash
 cd example/
-../scripts/agent.sh start docs "Add documentation to the main.go file"
+source ../venv/bin/activate
+../agent.py start docs "Add documentation to the main.go file"
+# Agent runs, shows output, commits changes, and exits
 ```
 
 ## How It Works
 
-1. **Creates isolated git worktree** in `../worktrees/<name>`
+1. **Creates isolated git worktree** in `../worktrees/<name>` with branch `agent--<name>`
 2. **Launches secure containers** (agent + proxy) with network restrictions
-3. **Runs Claude Code CLI** with your specified goal
+3. **Runs Claude Code CLI** with your specified goal, streaming output
 4. **Validates all actions** through hook system
-5. **Cleans up** when done
+5. **Commits changes** to branch `agent--<name>` and cleans up when complete (excluding .claude configuration)
 
 ## Security Features
 
@@ -65,16 +77,16 @@ cd example/
 
 ```
 agent-process/
-├── scripts/
-│   ├── agent.sh           # Main orchestrator
-│   ├── agent-workspace.sh # Git worktree management
-│   ├── agent-container.sh # Container management
-│   └── agent-proxy.sh     # Proxy management
+├── agent.py               # Main Python implementation
+├── requirements.txt       # Python dependencies
+├── .gitignore             # Excludes .claude/ and worktrees/
 ├── hooks/                 # Validation hooks
+├── certs/                 # SSL certificates for proxy
 ├── example/               # Sample project
 ├── Dockerfile.agent       # Agent container
 ├── Dockerfile.proxy       # Proxy container
-└── tinyproxy-whitelist    # Allowed domains
+├── tinyproxy-whitelist    # Allowed domains
+└── tinyproxy.conf         # Proxy configuration
 ```
 
 This is essentially a **"sandbox for AI coding agents"** - letting you safely run multiple Claude Code instances on different tasks with security guardrails and isolation.

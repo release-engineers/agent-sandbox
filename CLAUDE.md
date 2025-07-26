@@ -1,8 +1,10 @@
-# Agent Process - Technical Documentation for LLMs
+# Agent Process - LLM Technical Documentation
 
-## Project Overview
+## Project Overview for LLMs
 
-Agent Process is a sandbox system for running Claude Code AI agents in isolated, secure environments. Each agent operates in its own Docker container with network restrictions and git worktree isolation.
+Agent Process is a sandbox system for running Claude Code AI agents in isolated environments. This documentation provides technical details for LLMs working on or maintaining this project.
+
+**Key Point**: This system creates isolated workspaces where Claude Code agents can work safely without affecting the main codebase or accessing unauthorized resources.
 
 ## Core Architecture
 
@@ -15,24 +17,22 @@ Agent Process is a sandbox system for running Claude Code AI agents in isolated,
 ### Directory Structure
 ```
 agent-process/
-├── scripts/
-│   ├── agent.sh           # Main orchestrator script
-│   ├── agent-workspace.sh # Git worktree management
-│   ├── agent-container.sh # Docker container lifecycle
-│   └── agent-proxy.sh     # Proxy configuration and management
 ├── hooks/                 # Validation hooks for agent actions
 ├── certs/                 # SSL certificates for proxy
 ├── example/               # Sample project for testing
+├── agent.py               # Python implementation
+├── requirements.txt       # Python dependencies
 ├── Dockerfile.agent       # Agent container definition (Node.js 20 + Claude Code)
 ├── Dockerfile.proxy       # Proxy container definition
-└── tinyproxy-whitelist    # Allowed domains list
+├── tinyproxy-whitelist    # Allowed domains list
+└── tinyproxy.conf         # Proxy configuration
 ```
 
 ## Key Commands
 
 ### Starting an Agent
 ```bash
-./scripts/agent.sh start <agent-name> "<goal-description>"
+./agent.py start <agent-name> "<goal-description>"
 ```
 - Creates git worktree at `../worktrees/<agent-name>`
 - Launches Docker containers (agent + proxy)
@@ -41,9 +41,9 @@ agent-process/
 
 ### Managing Agents
 ```bash
-./scripts/agent.sh list     # Show active agents
-./scripts/agent.sh stop <name>  # Stop specific agent
-./scripts/agent.sh cleanup  # Remove all agents and worktrees
+./agent.py list        # Show agent branches with committed changes
+./agent.py cleanup     # Remove all agents and worktrees
+./agent.py auth        # Authenticate with Claude Code
 ```
 
 ## Technical Details
@@ -91,19 +91,19 @@ agent-process/
 
 ### Single Feature Development
 ```bash
-./scripts/agent.sh start auth-feature "Implement JWT authentication"
+./agent.py start auth-feature "Implement JWT authentication"
 ```
 
 ### Parallel Development
 ```bash
-./scripts/agent.sh start ui-update "Modernize dashboard UI"
-./scripts/agent.sh start api-docs "Generate OpenAPI documentation"
-./scripts/agent.sh start test-coverage "Add unit tests for user service"
+./agent.py start ui-update "Modernize dashboard UI"
+./agent.py start api-docs "Generate OpenAPI documentation"
+./agent.py start test-coverage "Add unit tests for user service"
 ```
 
 ### Code Review Tasks
 ```bash
-./scripts/agent.sh start security-review "Review code for security vulnerabilities"
+./agent.py start security-review "Review code for security vulnerabilities"
 ```
 
 ## Important Notes for LLMs
@@ -119,19 +119,19 @@ agent-process/
 ### Common Issues
 - **Network errors**: Check if domain is in tinyproxy-whitelist
 - **Permission errors**: Ensure proper ownership of worktree files
-- **Container failures**: Check Docker logs via `docker logs agent-<name>`
+- **Container failures**: Check Docker logs via `docker logs <agent-name>`
 - **Git conflicts**: Resolve in worktree before merging
 
 ### Debug Commands
 ```bash
 # View agent logs
-docker logs agent-<name>
+docker logs <agent-name>
 
 # Access agent container
-docker exec -it agent-<name> /bin/bash
+docker exec -it <agent-name> /bin/bash
 
 # Check proxy logs
-docker logs proxy-<name>
+docker logs proxy-<agent-name>
 ```
 
 ## Integration Points
@@ -150,3 +150,64 @@ docker logs proxy-<name>
 5. **Hook Validation**: Implement strict validation in hooks
 
 This system enables safe, parallel AI development with strong isolation and security boundaries.
+
+## Implementation Details
+
+The system is implemented as a single Python file (`agent.py`) with the following key characteristics:
+
+### Architecture
+- **Single-file design**: All functionality in one ~250-line Python script
+- **Simple dependencies**: Only `click` (CLI) and `docker` (container management)
+- **Direct approach**: Uses subprocess for git operations, docker-py for containers
+
+### Key Classes and Functions
+- `AgentManager`: Main class handling all operations
+- `start_agent()`: Creates worktree, runs agent, commits changes, and cleans up
+- `list_agents()`: Shows agent branches with committed changes
+- `cleanup_all()`: Removes all agents and resources
+- `_cleanup_and_commit()`: Internal method for cleanup and git operations
+
+### Container Management
+- **Agent containers**: Use `claude-code-agent` image with Claude Code CLI
+- **Proxy containers**: Use `claude-code-proxy` image with tinyproxy
+- **Network isolation**: All containers run on `agent-network`
+- **Volume mounts**: Worktree mounted to `/workspace`, credentials to `/home/node/.claude`
+
+### Git Operations
+- **Worktrees**: Created in `../worktrees/<agent-name>`
+- **Branches**: Named `agent--<name>` 
+- **Isolation**: Each agent gets its own branch and workspace
+- **Commit Process**: Changes are automatically committed to `agent--<name>` branch on completion
+- **Cleanup**: Worktrees are removed, branches remain with committed changes
+- **Exclusions**: .claude/ folders are excluded from commits via .gitignore
+
+### Configuration Management
+- **Claude settings**: Generated in `.claude/settings.json` within each worktree
+- **Hooks**: Pre-configured validation hooks for security
+- **Environment**: Proxy settings automatically configured
+
+## LLM Development Guidelines
+
+### When Working on This Project
+1. **Maintain simplicity**: The Python implementation should remain simple and readable
+2. **Test thoroughly**: Always test container operations and git worktree management
+3. **Handle errors gracefully**: Docker and git operations can fail, handle appropriately
+4. **Preserve security**: Don't weaken network isolation or hook validation
+5. **Document changes**: Update both README.md and CLAUDE.md
+6. **Protect .claude/**: Ensure .claude/ folders remain in .gitignore
+
+### Common Maintenance Tasks
+- **Adding new domains**: Update `tinyproxy-whitelist` file
+- **Modifying hooks**: Edit files in `hooks/` directory
+- **Container updates**: Modify `Dockerfile.agent` or `Dockerfile.proxy`
+- **Python updates**: Modify `agent.py` and update `requirements.txt`
+
+### Testing Approach
+```bash
+# Test from example directory
+cd example/
+source ../venv/bin/activate
+../agent.py start test "Simple test task"
+../agent.py list
+../agent.py stop test
+```
