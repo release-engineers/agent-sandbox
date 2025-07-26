@@ -1,4 +1,4 @@
-# Agent Process - Sandbox for AI Coding Agents
+# Agent Sandbox (AGS) - Sandbox for AI Coding Agents
 
 A sandbox for running Claude Code AI agents in isolated environments.
 
@@ -25,29 +25,33 @@ Creates **isolated workspaces** where each Claude Code agent:
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
+
+# Add bin/ to PATH for easier access
+export PATH="$(pwd)/bin:$PATH"
+# Or add to ~/.bashrc or ~/.zshrc:
+# export PATH="/path/to/agent-sandbox/bin:$PATH"
 ```
 
 ### Usage
 
 ```bash
 # Run an AI agent with a specific goal
-./agent.py start feature-name "Add user authentication to the login page"
+ags start feature-name "Add user authentication to the login page"
 
 # List agent branches (with committed changes)
-./agent.py list
+ags list
 
 # Clean up everything
-./agent.py cleanup
+ags cleanup
 
 # Authenticate with Claude Code (run once)
-./agent.py auth
+ags auth
 ```
 
 ### Example
 ```bash
 cd example/
-source ../venv/bin/activate
-../agent.py start docs "Add documentation to the main.go file"
+ags start docs "Add documentation to the main.go file"
 # Agent runs, shows output, commits changes, and exits
 ```
 
@@ -76,7 +80,7 @@ source ../venv/bin/activate
 ## Directory Structure
 
 ```
-agent-process/
+agent-sandbox/
 ├── agent.py               # Main Python implementation
 ├── requirements.txt       # Python dependencies
 ├── .gitignore             # Excludes .claude/ and worktrees/
@@ -89,4 +93,5 @@ agent-process/
 └── tinyproxy.conf         # Proxy configuration
 ```
 
-This is essentially a **"sandbox for AI coding agents"** - letting you safely run multiple Claude Code instances on different tasks with security guardrails and isolation.
+Agent Sandbox (AGS) is essentially a **"sandbox for AI coding agents"** - letting you safely run multiple Claude Code instances on different tasks with security guardrails and isolation.
+
