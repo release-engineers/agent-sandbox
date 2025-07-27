@@ -49,6 +49,13 @@ COPY certs/proxy.crt /usr/local/share/ca-certificates/proxy.crt
 # Update CA certificates to include proxy certificate
 RUN update-ca-certificates
 
+# Copy the agent-specific gitignore file
+COPY agent-gitignore /home/node/.gitignore_global
+
+# Configure git to use the global gitignore for the node user
+RUN git config --global core.excludesfile /home/node/.gitignore_global && \
+    chown node:node /home/node/.gitignore_global
+
 # Set up non-root user
 USER node
 
