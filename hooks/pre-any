@@ -23,40 +23,58 @@ case "$tool_name" in
         ;;
     "Read")
         file_path=$(echo "$json_input" | jq -r '.tool_input.file_path // "unknown"')
-        echo "[LOG] [$timestamp] $hook_event: $tool_name - File: $file_path" >> /var/log/ags.log
+        # Shorten long paths for display
+        display_path=$(echo "$file_path" | sed 's|^/workspace/||')
+        echo "[LOG] [$timestamp] $hook_event: $tool_name - Reading: $display_path" >> /var/log/ags.log
         ;;
-    "Write"|"Edit"|"MultiEdit")
+    "Write")
         file_path=$(echo "$json_input" | jq -r '.tool_input.file_path // "unknown"')
-        echo "[LOG] [$timestamp] $hook_event: $tool_name - File: $file_path" >> /var/log/ags.log
+        display_path=$(echo "$file_path" | sed 's|^/workspace/||')
+        echo "[LOG] [$timestamp] $hook_event: $tool_name - Writing: $display_path" >> /var/log/ags.log
+        ;;
+    "Edit"|"MultiEdit")
+        file_path=$(echo "$json_input" | jq -r '.tool_input.file_path // "unknown"')
+        display_path=$(echo "$file_path" | sed 's|^/workspace/||')
+        echo "[LOG] [$timestamp] $hook_event: $tool_name - Editing: $display_path" >> /var/log/ags.log
         ;;
     "Bash")
         command=$(echo "$json_input" | jq -r '.tool_input.command // "unknown"' | head -c 100)
-        echo "[LOG] [$timestamp] $hook_event: $tool_name - Command: $command..." >> /var/log/ags.log
+        # Clean up command for display
+        display_cmd=$(echo "$command" | tr '\n' ' ' | sed 's/  */ /g')
+        echo "[LOG] [$timestamp] $hook_event: $tool_name - Running: $display_cmd" >> /var/log/ags.log
         ;;
     "Task")
         description=$(echo "$json_input" | jq -r '.tool_input.description // "unknown"')
-        echo "[LOG] [$timestamp] $hook_event: $tool_name - Task: $description" >> /var/log/ags.log
+        echo "[LOG] [$timestamp] $hook_event: $tool_name - $description" >> /var/log/ags.log
         ;;
     "WebSearch")
         query=$(echo "$json_input" | jq -r '.tool_input.query // "unknown"' | head -c 80)
-        echo "[LOG] [$timestamp] $hook_event: $tool_name - Query: $query..." >> /var/log/ags.log
+        echo "[LOG] [$timestamp] $hook_event: $tool_name - Searching: $query" >> /var/log/ags.log
         ;;
     "WebFetch")
         url=$(echo "$json_input" | jq -r '.tool_input.url // "unknown"')
-        echo "[LOG] [$timestamp] $hook_event: $tool_name - URL: $url" >> /var/log/ags.log
+        echo "[LOG] [$timestamp] $hook_event: $tool_name - Fetching: $url" >> /var/log/ags.log
         ;;
-    "Grep"|"Glob")
+    "Grep")
         pattern=$(echo "$json_input" | jq -r '.tool_input.pattern // "unknown"' | head -c 50)
         path=$(echo "$json_input" | jq -r '.tool_input.path // "."')
-        echo "[LOG] [$timestamp] $hook_event: $tool_name - Pattern: $pattern... in $path" >> /var/log/ags.log
+        display_path=$(echo "$path" | sed 's|^/workspace/||')
+        echo "[LOG] [$timestamp] $hook_event: $tool_name - Searching for: '$pattern' in $display_path" >> /var/log/ags.log
+        ;;
+    "Glob")
+        pattern=$(echo "$json_input" | jq -r '.tool_input.pattern // "unknown"')
+        path=$(echo "$json_input" | jq -r '.tool_input.path // "."')
+        display_path=$(echo "$path" | sed 's|^/workspace/||')
+        echo "[LOG] [$timestamp] $hook_event: $tool_name - Finding: '$pattern' in $display_path" >> /var/log/ags.log
         ;;
     "LS")
         path=$(echo "$json_input" | jq -r '.tool_input.path // "unknown"')
-        echo "[LOG] [$timestamp] $hook_event: $tool_name - Path: $path" >> /var/log/ags.log
+        display_path=$(echo "$path" | sed 's|^/workspace/||')
+        echo "[LOG] [$timestamp] $hook_event: $tool_name - Listing: $display_path" >> /var/log/ags.log
         ;;
     *)
         # For other tools, just log the tool name
-        echo "[LOG] [$timestamp] $hook_event: $tool_name" >> /var/log/ags.log
+        echo "[LOG] [$timestamp] $hook_event: $tool_name - Executing" >> /var/log/ags.log
         ;;
 esac
 

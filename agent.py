@@ -9,20 +9,35 @@ import time
 import tempfile
 import shutil
 from pathlib import Path
+from datetime import datetime
+import re
 
 import click
 import docker
+from rich.console import Console
+from rich.panel import Panel
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
+from rich.table import Table
+from rich.syntax import Syntax
+from rich.live import Live
+from rich.layout import Layout
+from rich.text import Text
+from rich import print as rprint
 
 
 class AgentManager:
     """Manages Claude Code agents with Docker and git worktrees."""
     
     def __init__(self):
+        self.console = Console()
         try:
             self.docker = docker.from_env()
         except Exception as e:
-            print(f"Error connecting to Docker: {e}")
-            print("Please ensure Docker is running and try again.")
+            self.console.print(Panel(
+                f"[bold red]Error connecting to Docker[/bold red]\n\n{e}\n\nPlease ensure Docker is running and try again.",
+                title="Docker Connection Error",
+                border_style="red"
+            ))
             sys.exit(1)
         self.git_root = self._get_git_root()
         self.worktree_dir = self.git_root.parent / "worktrees"
@@ -40,13 +55,83 @@ class AgentManager:
         """Run a command and return result."""
         return subprocess.run(cmd, capture_output=True, text=True)
     
+    def _format_log_line(self, line: str):
+        """Format log lines with rich styling."""
+        # Skip empty lines
+        if not line.strip():
+            return
+            
+        # Handle [LOG] prefixed lines from hooks
+        if line.startswith('[LOG]'):
+            # Remove the [LOG] prefix
+            line = line[5:].strip()
+            
+            # Parse timestamp if present
+            timestamp_match = re.match(r'\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\]\s*(.*)', line)
+            if timestamp_match:
+                timestamp, content = timestamp_match.groups()
+                
+                # Parse the hook event and tool
+                event_match = re.match(r'(\w+):\s*(\w+)\s*-\s*(.*)', content)
+                if event_match:
+                    event, tool, details = event_match.groups()
+                    
+                    # Color code by tool type
+                    tool_colors = {
+                        'Task': 'magenta',
+                        'Read': 'blue',
+                        'Write': 'green',
+                        'Edit': 'green',
+                        'MultiEdit': 'green',
+                        'Bash': 'yellow',
+                        'Grep': 'cyan',
+                        'Glob': 'cyan',
+                        'LS': 'blue',
+                        'TodoWrite': 'purple',
+                        'WebSearch': 'red',
+                        'WebFetch': 'red'
+                    }
+                    
+                    tool_icons = {
+                        'Task': '🎯',
+                        'Read': '📖',
+                        'Write': '📝',
+                        'Edit': '✏️',
+                        'MultiEdit': '✏️',
+                        'Bash': '💻',
+                        'Grep': '🔍',
+                        'Glob': '🔍',
+                        'LS': '📁',
+                        'TodoWrite': '📋',
+                        'WebSearch': '🌐',
+                        'WebFetch': '🌐'
+                    }
+                    
+                    color = tool_colors.get(tool, 'white')
+                    icon = tool_icons.get(tool, '🔧')
+                    
+                    # Format the output
+                    time_str = datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S.%f').strftime('%H:%M:%S')
+                    self.console.print(
+                        f"[dim]{time_str}[/dim] {icon} [{color}]{tool}[/{color}] {details}"
+                    )
+                else:
+                    # Fallback formatting
+                    self.console.print(f"[dim]{timestamp}[/dim] {content}")
+            else:
+                # No timestamp, just print the content
+                self.console.print(f"[yellow]{line}[/yellow]")
+        else:
+            # Regular output from the agent
+            self.console.print(line)
+    
     def _cleanup_existing_agent(self, name: str):
         """Clean up any existing agent environment."""
         # Stop and remove containers
         for container_name in [name, f"proxy-{name}"]:
             try:
                 container = self.docker.containers.get(container_name)
-                print(f"Stopping existing container: {container_name}")
+                self.console.print(f"[yellow]⏹  Stopping existing container:[/yellow] {container_name}")
                 container.stop()
                 container.remove()
             except docker.errors.NotFound:
@@ -55,7 +140,7 @@ class AgentManager:
         # Remove existing worktree
         worktree_path = self.worktree_dir / name
         if worktree_path.exists():
-            print(f"Removing existing worktree: {worktree_path}")
+            self.console.print(f"[yellow]🗑  Removing existing worktree:[/yellow] {worktree_path}")
             # Force remove the worktree
             self._run_command(["git", "worktree", "remove", "--force", str(worktree_path)])
         
@@ -63,13 +148,16 @@ class AgentManager:
         branch_name = f"agent--{name}"
         result = self._run_command(["git", "branch", "--list", branch_name])
         if result.stdout.strip():
-            print(f"Deleting existing branch: {branch_name}")
+            self.console.print(f"[yellow]🔀 Deleting existing branch:[/yellow] {branch_name}")
             self._run_command(["git", "branch", "-D", branch_name])
     
     def start_agent(self, name: str, goal: str):
         """Start a new agent."""
-        print(f"Starting agent: {name}")
-        print(f"Goal: {goal}")
+        self.console.print(Panel(
+            f"[bold cyan]Agent Name:[/bold cyan] {name}\n[bold cyan]Goal:[/bold cyan] {goal}",
+            title="🚀 Starting Agent",
+            border_style="cyan"
+        ))
         
         # Clean up any existing environment for this name
         self._cleanup_existing_agent(name)
@@ -77,12 +165,13 @@ class AgentManager:
         # Create worktree
         worktree_path = self.worktree_dir / name
         
-        print("Creating worktree...")
-        result = self._run_command([
-            "git", "worktree", "add", str(worktree_path), "-b", f"agent--{name}"
-        ])
-        if result.returncode != 0:
-            raise click.ClickException(f"Failed to create worktree: {result.stderr}")
+        with self.console.status("[cyan]Creating worktree...[/cyan]", spinner="dots") as status:
+            result = self._run_command([
+                "git", "worktree", "add", str(worktree_path), "-b", f"agent--{name}"
+            ])
+            if result.returncode != 0:
+                raise click.ClickException(f"Failed to create worktree: {result.stderr}")
+            status.update("[green]✓ Worktree created[/green]")
         
         # Setup Claude settings
         claude_dir = worktree_path / ".claude"
@@ -110,19 +199,29 @@ class AgentManager:
         # Build images
         agent_process_dir = Path(__file__).parent
         
-        print("Building agent image...")
-        self.docker.images.build(
-            path=str(agent_process_dir),
-            dockerfile="Dockerfile.agent",
-            tag="claude-code-agent"
-        )
-        
-        print("Building proxy image...")
-        self.docker.images.build(
-            path=str(agent_process_dir),
-            dockerfile="Dockerfile.proxy",
-            tag="claude-code-proxy"
-        )
+        # Build images with progress
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            console=self.console
+        ) as progress:
+            build_task = progress.add_task("[cyan]Building Docker images...[/cyan]", total=2)
+            
+            self.docker.images.build(
+                path=str(agent_process_dir),
+                dockerfile="Dockerfile.agent",
+                tag="claude-code-agent"
+            )
+            progress.update(build_task, advance=1, description="[green]✓ Agent image built[/green]")
+            
+            self.docker.images.build(
+                path=str(agent_process_dir),
+                dockerfile="Dockerfile.proxy",
+                tag="claude-code-proxy"
+            )
+            progress.update(build_task, advance=1, description="[green]✓ All images built[/green]")
         
         # Create network if needed
         try:
@@ -131,17 +230,18 @@ class AgentManager:
             self.docker.networks.create("agent-network")
         
         # Start proxy container
-        print("Starting proxy container...")
-        self.docker.containers.run(
-            "claude-code-proxy",
-            name=f"proxy-{name}",
-            network="agent-network",
-            detach=True,
-            auto_remove=True
-        )
+        with self.console.status("[cyan]Starting proxy container...[/cyan]", spinner="dots"):
+            self.docker.containers.run(
+                "claude-code-proxy",
+                name=f"proxy-{name}",
+                network="agent-network",
+                detach=True,
+                auto_remove=True
+            )
+            self.console.print("[green]✓ Proxy container started[/green]")
         
         # Start agent container
-        print("Starting agent container...")
+        self.console.print("\n[bold cyan]🤖 Starting agent container...[/bold cyan]")
         
         temp_log_dir = None
         try:
@@ -150,7 +250,7 @@ class AgentManager:
             log_dir = Path(temp_log_dir)
             log_file = log_dir / "ags.log"
             log_file.touch()
-            print(f"Log directory created at: {log_dir}")
+            self.console.print(f"[dim]Log directory: {log_dir}[/dim]")
             
             # Create and start container to properly stream output
             container = self.docker.containers.create(
@@ -187,7 +287,7 @@ class AgentManager:
                     while container.status in ['running', 'created']:
                         line = f.readline()
                         if line:
-                            print(f"[LOG] {line.rstrip()}")
+                            self._format_log_line(line.rstrip())
                         else:
                             time.sleep(0.1)
             
@@ -198,21 +298,23 @@ class AgentManager:
             
             # Also stream regular container logs
             for line in container.logs(stream=True, follow=True):
-                print(line.decode('utf-8', errors='ignore').rstrip())
+                decoded_line = line.decode('utf-8', errors='ignore').rstrip()
+                if decoded_line and not decoded_line.startswith('[LOG]'):
+                    self.console.print(f"[dim]{decoded_line}[/dim]")
             
             # Wait for completion
             result = container.wait()
             if result['StatusCode'] == 0:
-                print("Agent completed successfully")
+                self.console.print("\n[bold green]✅ Agent completed successfully[/bold green]")
             else:
-                print(f"Agent failed with exit code: {result['StatusCode']}")
+                self.console.print(f"\n[bold red]❌ Agent failed with exit code: {result['StatusCode']}[/bold red]")
             
         except Exception as e:
-            print(f"Agent failed: {e}")
+            self.console.print(f"\n[bold red]❌ Agent failed:[/bold red] {e}")
         finally:
             # Clean up temporary log directory
             if temp_log_dir and Path(temp_log_dir).exists():
-                print(f"Cleaning up temporary log directory: {temp_log_dir}")
+                self.console.print(f"[dim]Cleaning up temporary log directory...[/dim]")
                 shutil.rmtree(temp_log_dir)
             
         # Now clean up and commit changes
@@ -220,14 +322,14 @@ class AgentManager:
         
     def _cleanup_and_commit(self, name: str):
         """Clean up containers and commit changes."""
-        print("Cleaning up and committing changes...")
+        self.console.print("\n[bold]🧿 Cleaning up and committing changes...[/bold]")
         
         # Stop containers (they may already be removed due to auto_remove=True)
         for container_name in [name, f"proxy-{name}"]:
             try:
                 container = self.docker.containers.get(container_name)
                 container.stop()
-                print(f"Stopped {container_name}")
+                self.console.print(f"[green]✓ Stopped {container_name}[/green]")
             except docker.errors.NotFound:
                 # Container already removed (auto_remove=True)
                 pass
@@ -246,20 +348,29 @@ class AgentManager:
             
             # Show what happened
             if commit_result.stdout:
-                print(commit_result.stdout)
-            if commit_result.stderr:
-                print(commit_result.stderr)
+                self.console.print(Panel(
+                    commit_result.stdout,
+                    title="Git Commit Output",
+                    border_style="green"
+                ))
+            if commit_result.stderr and commit_result.returncode != 0:
+                self.console.print(Panel(
+                    commit_result.stderr,
+                    title="Git Commit Error",
+                    border_style="red"
+                ))
             
             # Remove worktree
             self._run_command(["git", "worktree", "remove", str(worktree_path)])
-            print(f"Removed worktree")
+            self.console.print(f"[green]✓ Removed worktree[/green]")
         
-        print(f"Agent {name} completed successfully")
+        self.console.print(f"\n[bold green]🎉 Agent {name} completed successfully[/bold green]")
         
     def list_agents(self):
         """List agent branches."""
-        print("Agent branches:")
-        print("-" * 50)
+        table = Table(title="Agent Branches", show_header=True, header_style="bold cyan")
+        table.add_column("Branch Name", style="yellow")
+        table.add_column("Agent Name", style="white")
         
         # Get agent branches
         result = self._run_command(["git", "branch"])
@@ -270,25 +381,28 @@ class AgentManager:
                 agent_branches.append(branch)
         
         if not agent_branches:
-            print("No agent branches found")
+            self.console.print("[dim]No agent branches found[/dim]")
             return
         
         for branch in sorted(agent_branches):
-            print(f"  {branch}")
+            agent_name = branch.replace("agent--", "")
+            table.add_row(branch, agent_name)
+        
+        self.console.print(table)
             
     def stop_agent(self, name: str):
         """Stop and remove an agent (for backward compatibility)."""
-        print(f"Stopping agent: {name}")
+        self.console.print(f"[bold yellow]⏹  Stopping agent: {name}[/bold yellow]")
         self._cleanup_and_commit(name)
     
     def cleanup_all(self):
         """Clean up all agents and resources."""
-        print("Cleaning up all agents...")
+        self.console.print("[bold yellow]🧽 Cleaning up all agents...[/bold yellow]")
         
         # Stop all agent containers
         for container in self.docker.containers.list(all=True):
             if container.attrs["Config"]["Image"] in ["claude-code-agent", "claude-code-proxy"]:
-                print(f"Removing container: {container.name}")
+                self.console.print(f"[yellow]🗑  Removing container:[/yellow] {container.name}")
                 container.stop()
                 container.remove()
         
@@ -296,7 +410,7 @@ class AgentManager:
         try:
             network = self.docker.networks.get("agent-network")
             network.remove()
-            print("Removed agent network")
+            self.console.print("[green]✓ Removed agent network[/green]")
         except docker.errors.NotFound:
             pass
         
@@ -309,14 +423,14 @@ class AgentManager:
                 worktree_paths.append(path)
         
         for path in worktree_paths:
-            print(f"Force removing worktree: {path}")
+            self.console.print(f"[yellow]🗑  Force removing worktree:[/yellow] {path}")
             # Use --force to ensure removal even if there are uncommitted changes
             remove_result = self._run_command(["git", "worktree", "remove", "--force", path])
             if remove_result.returncode != 0:
-                print(f"  Warning: {remove_result.stderr}")
+                self.console.print(f"[red]  ⚠️  Warning: {remove_result.stderr}[/red]")
         
         # Run prune to clean up any stale worktree references
-        print("Pruning stale worktree references...")
+        self.console.print("[cyan]🌳 Pruning stale worktree references...[/cyan]")
         self._run_command(["git", "worktree", "prune"])
         
         # Now delete agent branches
@@ -324,17 +438,20 @@ class AgentManager:
         for line in result.stdout.strip().split("\n"):
             branch = line.strip().lstrip("* ")  # Remove current branch indicator
             if branch.startswith("agent--") or branch.startswith("test-"):
-                print(f"Deleting branch: {branch}")
+                self.console.print(f"[yellow]🔀 Deleting branch:[/yellow] {branch}")
                 delete_result = self._run_command(["git", "branch", "-D", branch])
                 if delete_result.returncode != 0:
-                    print(f"  Warning: {delete_result.stderr}")
+                    self.console.print(f"[red]  ⚠️  Warning: {delete_result.stderr}[/red]")
         
-        print("Cleanup completed")
+        self.console.print("\n[bold green]✅ Cleanup completed[/bold green]")
     
     def auth(self):
         """Run Claude Code authentication."""
-        print("Starting Claude Code authentication...")
-        print("Follow the prompts to authenticate with your Claude account.\n")
+        self.console.print(Panel(
+            "[bold cyan]Starting Claude Code authentication...[/bold cyan]\n\nFollow the prompts to authenticate with your Claude account.",
+            title="🔐 Authentication",
+            border_style="cyan"
+        ))
         
         # Ensure credentials volume exists
         try:
