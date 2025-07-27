@@ -6,8 +6,59 @@ json_input=$(cat)
 # Ensure log directory exists
 mkdir -p /var/log
 
-# Append to log file with timestamp
-echo "[$(date -u '+%Y-%m-%d %H:%M:%S.%3N')] PreToolUse: $json_input" >> /var/log/ags.log
+# Extract relevant fields and format output
+timestamp=$(date -u '+%Y-%m-%d %H:%M:%S.%3N')
+tool_name=$(echo "$json_input" | jq -r '.tool_name // "unknown"')
+hook_event=$(echo "$json_input" | jq -r '.hook_event_name // "unknown"')
+
+# Format tool input based on tool type
+case "$tool_name" in
+    "TodoWrite")
+        # Extract todo summary
+        todo_count=$(echo "$json_input" | jq '.tool_input.todos | length')
+        pending=$(echo "$json_input" | jq '[.tool_input.todos[] | select(.status == "pending")] | length')
+        in_progress=$(echo "$json_input" | jq '[.tool_input.todos[] | select(.status == "in_progress")] | length')
+        completed=$(echo "$json_input" | jq '[.tool_input.todos[] | select(.status == "completed")] | length')
+        echo "[LOG] [$timestamp] $hook_event: $tool_name - Todos: $todo_count total ($pending pending, $in_progress in progress, $completed completed)" >> /var/log/ags.log
+        ;;
+    "Read")
+        file_path=$(echo "$json_input" | jq -r '.tool_input.file_path // "unknown"')
+        echo "[LOG] [$timestamp] $hook_event: $tool_name - File: $file_path" >> /var/log/ags.log
+        ;;
+    "Write"|"Edit"|"MultiEdit")
+        file_path=$(echo "$json_input" | jq -r '.tool_input.file_path // "unknown"')
+        echo "[LOG] [$timestamp] $hook_event: $tool_name - File: $file_path" >> /var/log/ags.log
+        ;;
+    "Bash")
+        command=$(echo "$json_input" | jq -r '.tool_input.command // "unknown"' | head -c 100)
+        echo "[LOG] [$timestamp] $hook_event: $tool_name - Command: $command..." >> /var/log/ags.log
+        ;;
+    "Task")
+        description=$(echo "$json_input" | jq -r '.tool_input.description // "unknown"')
+        echo "[LOG] [$timestamp] $hook_event: $tool_name - Task: $description" >> /var/log/ags.log
+        ;;
+    "WebSearch")
+        query=$(echo "$json_input" | jq -r '.tool_input.query // "unknown"' | head -c 80)
+        echo "[LOG] [$timestamp] $hook_event: $tool_name - Query: $query..." >> /var/log/ags.log
+        ;;
+    "WebFetch")
+        url=$(echo "$json_input" | jq -r '.tool_input.url // "unknown"')
+        echo "[LOG] [$timestamp] $hook_event: $tool_name - URL: $url" >> /var/log/ags.log
+        ;;
+    "Grep"|"Glob")
+        pattern=$(echo "$json_input" | jq -r '.tool_input.pattern // "unknown"' | head -c 50)
+        path=$(echo "$json_input" | jq -r '.tool_input.path // "."')
+        echo "[LOG] [$timestamp] $hook_event: $tool_name - Pattern: $pattern... in $path" >> /var/log/ags.log
+        ;;
+    "LS")
+        path=$(echo "$json_input" | jq -r '.tool_input.path // "unknown"')
+        echo "[LOG] [$timestamp] $hook_event: $tool_name - Path: $path" >> /var/log/ags.log
+        ;;
+    *)
+        # For other tools, just log the tool name
+        echo "[LOG] [$timestamp] $hook_event: $tool_name" >> /var/log/ags.log
+        ;;
+esac
 
 # Always approve (exit 0)
 exit 0
