@@ -24,12 +24,15 @@ from rich.layout import Layout
 from rich.text import Text
 from rich import print as rprint
 
+from logs import AgentLogFormatter
+
 
 class AgentManager:
     """Manages Claude Code agents with Docker and git worktrees."""
     
     def __init__(self):
         self.console = Console()
+        self.log_formatter = AgentLogFormatter(self.console)
         try:
             self.docker = docker.from_env()
         except Exception as e:
@@ -55,75 +58,7 @@ class AgentManager:
         """Run a command and return result."""
         return subprocess.run(cmd, capture_output=True, text=True)
     
-    def _format_log_line(self, line: str):
-        """Format log lines with rich styling."""
-        # Skip empty lines
-        if not line.strip():
-            return
-            
-        # Handle [LOG] prefixed lines from hooks
-        if line.startswith('[LOG]'):
-            # Remove the [LOG] prefix
-            line = line[5:].strip()
-            
-            # Parse timestamp if present
-            timestamp_match = re.match(r'\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\]\s*(.*)', line)
-            if timestamp_match:
-                timestamp, content = timestamp_match.groups()
-                
-                # Parse the hook event and tool
-                event_match = re.match(r'(\w+):\s*(\w+)\s*-\s*(.*)', content)
-                if event_match:
-                    event, tool, details = event_match.groups()
-                    
-                    # Color code by tool type
-                    tool_colors = {
-                        'Task': 'magenta',
-                        'Read': 'blue',
-                        'Write': 'green',
-                        'Edit': 'green',
-                        'MultiEdit': 'green',
-                        'Bash': 'yellow',
-                        'Grep': 'cyan',
-                        'Glob': 'cyan',
-                        'LS': 'blue',
-                        'TodoWrite': 'purple',
-                        'WebSearch': 'red',
-                        'WebFetch': 'red'
-                    }
-                    
-                    tool_icons = {
-                        'Task': '🎯',
-                        'Read': '📖',
-                        'Write': '📝',
-                        'Edit': '✏️',
-                        'MultiEdit': '✏️',
-                        'Bash': '💻',
-                        'Grep': '🔍',
-                        'Glob': '🔍',
-                        'LS': '📁',
-                        'TodoWrite': '📋',
-                        'WebSearch': '🌐',
-                        'WebFetch': '🌐'
-                    }
-                    
-                    color = tool_colors.get(tool, 'white')
-                    icon = tool_icons.get(tool, '🔧')
-                    
-                    # Format the output
-                    time_str = datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S.%f').strftime('%H:%M:%S')
-                    self.console.print(
-                        f"[dim]{time_str}[/dim] {icon} [{color}]{tool}[/{color}] {details}"
-                    )
-                else:
-                    # Fallback formatting
-                    self.console.print(f"[dim]{timestamp}[/dim] {content}")
-            else:
-                # No timestamp, just print the content
-                self.console.print(f"[yellow]{line}[/yellow]")
-        else:
-            # Regular output from the agent
-            self.console.print(line)
+
     
     def _cleanup_existing_agent(self, name: str):
         """Clean up any existing agent environment."""
@@ -292,7 +227,7 @@ Important: After you complete your work, commit all of it in one large commit. R
                     while container.status in ['running', 'created']:
                         line = f.readline()
                         if line:
-                            self._format_log_line(line.rstrip())
+                            self.log_formatter.format_log_line(line.rstrip())
                         else:
                             time.sleep(0.1)
             

@@ -6,77 +6,9 @@ json_input=$(cat)
 # Ensure log directory exists
 mkdir -p /var/log
 
-# Extract relevant fields and format output
-timestamp=$(date -u '+%Y-%m-%d %H:%M:%S.%3N')
-tool_name=$(echo "$json_input" | jq -r '.tool_name // "unknown"')
-hook_event=$(echo "$json_input" | jq -r '.hook_event_name // "unknown"')
-
-# Format tool input based on tool type
-case "$tool_name" in
-    "TodoWrite")
-        # Extract todo summary
-        todo_count=$(echo "$json_input" | jq '.tool_input.todos | length')
-        pending=$(echo "$json_input" | jq '[.tool_input.todos[] | select(.status == "pending")] | length')
-        in_progress=$(echo "$json_input" | jq '[.tool_input.todos[] | select(.status == "in_progress")] | length')
-        completed=$(echo "$json_input" | jq '[.tool_input.todos[] | select(.status == "completed")] | length')
-        echo "[LOG] [$timestamp] $hook_event: $tool_name - Todos: $todo_count total ($pending pending, $in_progress in progress, $completed completed)" >> /var/log/ags.log
-        ;;
-    "Read")
-        file_path=$(echo "$json_input" | jq -r '.tool_input.file_path // "unknown"')
-        # Shorten long paths for display
-        display_path=$(echo "$file_path" | sed 's|^/workspace/||')
-        echo "[LOG] [$timestamp] $hook_event: $tool_name - Reading: $display_path" >> /var/log/ags.log
-        ;;
-    "Write")
-        file_path=$(echo "$json_input" | jq -r '.tool_input.file_path // "unknown"')
-        display_path=$(echo "$file_path" | sed 's|^/workspace/||')
-        echo "[LOG] [$timestamp] $hook_event: $tool_name - Writing: $display_path" >> /var/log/ags.log
-        ;;
-    "Edit"|"MultiEdit")
-        file_path=$(echo "$json_input" | jq -r '.tool_input.file_path // "unknown"')
-        display_path=$(echo "$file_path" | sed 's|^/workspace/||')
-        echo "[LOG] [$timestamp] $hook_event: $tool_name - Editing: $display_path" >> /var/log/ags.log
-        ;;
-    "Bash")
-        command=$(echo "$json_input" | jq -r '.tool_input.command // "unknown"' | head -c 100)
-        # Clean up command for display
-        display_cmd=$(echo "$command" | tr '\n' ' ' | sed 's/  */ /g')
-        echo "[LOG] [$timestamp] $hook_event: $tool_name - Running: $display_cmd" >> /var/log/ags.log
-        ;;
-    "Task")
-        description=$(echo "$json_input" | jq -r '.tool_input.description // "unknown"')
-        echo "[LOG] [$timestamp] $hook_event: $tool_name - $description" >> /var/log/ags.log
-        ;;
-    "WebSearch")
-        query=$(echo "$json_input" | jq -r '.tool_input.query // "unknown"' | head -c 80)
-        echo "[LOG] [$timestamp] $hook_event: $tool_name - Searching: $query" >> /var/log/ags.log
-        ;;
-    "WebFetch")
-        url=$(echo "$json_input" | jq -r '.tool_input.url // "unknown"')
-        echo "[LOG] [$timestamp] $hook_event: $tool_name - Fetching: $url" >> /var/log/ags.log
-        ;;
-    "Grep")
-        pattern=$(echo "$json_input" | jq -r '.tool_input.pattern // "unknown"' | head -c 50)
-        path=$(echo "$json_input" | jq -r '.tool_input.path // "."')
-        display_path=$(echo "$path" | sed 's|^/workspace/||')
-        echo "[LOG] [$timestamp] $hook_event: $tool_name - Searching for: '$pattern' in $display_path" >> /var/log/ags.log
-        ;;
-    "Glob")
-        pattern=$(echo "$json_input" | jq -r '.tool_input.pattern // "unknown"')
-        path=$(echo "$json_input" | jq -r '.tool_input.path // "."')
-        display_path=$(echo "$path" | sed 's|^/workspace/||')
-        echo "[LOG] [$timestamp] $hook_event: $tool_name - Finding: '$pattern' in $display_path" >> /var/log/ags.log
-        ;;
-    "LS")
-        path=$(echo "$json_input" | jq -r '.tool_input.path // "unknown"')
-        display_path=$(echo "$path" | sed 's|^/workspace/||')
-        echo "[LOG] [$timestamp] $hook_event: $tool_name - Listing: $display_path" >> /var/log/ags.log
-        ;;
-    *)
-        # For other tools, just log the tool name
-        echo "[LOG] [$timestamp] $hook_event: $tool_name - Executing" >> /var/log/ags.log
-        ;;
-esac
+# Add timestamp to the JSON and write it to the log file
+timestamp=$(date -u -Iseconds)
+echo "$json_input" | jq --arg ts "$timestamp" '. + {timestamp: $ts}' >> /var/log/ags.log
 
 # Always approve (exit 0)
 exit 0
