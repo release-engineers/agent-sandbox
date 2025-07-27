@@ -252,13 +252,18 @@ class AgentManager:
             log_file.touch()
             self.console.print(f"[dim]Log directory: {log_dir}[/dim]")
             
+            # Add GOAL amendment with completion instructions
+            goal_amendment = goal + """
+
+Important: After you complete your work, commit all of it in one large commit. Run git status and similar tools beforehand to ensure you do not commit any files accidentally. If you happen to have documented your plans in a file in the workspace, remove these files too."""
+
             # Create and start container to properly stream output
             container = self.docker.containers.create(
                 "claude-code-agent",
                 name=name,
                 network="agent-network",
                 environment={
-                    "CLAUDE_GOAL": goal,
+                    "CLAUDE_GOAL": goal_amendment,
                     "HTTP_PROXY": f"http://proxy-{name}:3128",
                     "HTTPS_PROXY": f"http://proxy-{name}:3128"
                 },
