@@ -1,5 +1,5 @@
 #!/bin/bash
-# Agent Sandbox (ags) - Wrapper script for agent.py
+# Agent Sandbox (ags-server) - Start the FastAPI server
 
 set -e
 set -o pipefail
@@ -11,6 +11,15 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 # Activate virtual environment
 source "$PROJECT_DIR/venv/bin/activate"
 
-# Set PYTHONPATH to include project directory and run main.py with all arguments
+# Set PYTHONPATH to include project directory and start the server
 export PYTHONPATH="$PROJECT_DIR:$PYTHONPATH"
-exec python -m src.main "$@"
+exec python -c "
+import uvicorn
+uvicorn.run(
+    'src.server:app', 
+    host='0.0.0.0', 
+    port=8000,
+    reload=True,
+    log_level='info'
+)
+"

@@ -14,14 +14,15 @@ from typing import Optional
 class AgentManager:
     """Manages Claude Code agents with Docker and git worktrees."""
     
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str, project_path: Optional[str] = None):
         self.console = Console()
         self.db = AgentDatabase(db_path)
         self.diff_manager = DiffManager(db_path)
-        self.workspace_manager = WorkspaceManager()
+        self.project_path = Path(project_path) if project_path else Path.cwd()
+        self.workspace_manager = WorkspaceManager(self.project_path)
         self.log_manager = LogManager(db_path)
         self.log_formatter = None
-        self.project_name = Path.cwd().name
+        self.project_name = self.project_path.name
     
     def start_agent(self, goal: str):
         """Start a new agent."""

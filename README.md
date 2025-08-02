@@ -5,11 +5,12 @@ Run Claude Code AI agents in isolated Docker containers with network restriction
 ## What It Does
 
 AGS creates secure, isolated environments for Claude Code agents with:
-- **Interactive TUI**: Modern terminal interface with real-time monitoring
-- **Vim-style commands**: Intuitive `:quit`, `:diff`, `:restart` workflow
+- **Client-Server Architecture**: FastAPI server manages agents, web interface as client
+- **Web Interface**: Modern browser-based interface with real-time monitoring
+- **Project Management**: Work with any Git repository by URL
 - **Git worktrees**: Isolated workspaces with dedicated branches
 - **Docker containers**: Sandboxed execution with network whitelisting
-- **Diff viewer**: Fullscreen syntax-highlighted code review
+- **Diff viewer**: Built-in syntax-highlighted code review
 - **Agent restart**: Re-run agents with the same goals
 
 ## Quick Start
@@ -39,16 +40,18 @@ export PATH="$(pwd)/bin:$PATH"
 ## Usage
 
 ```bash
-ags
+# Start the server (in one terminal)
+ags-server
 
-# Type your goal, hit Enter. i.e. "Add error handling to the login function"
+# Start the web interface (in another terminal)
+ags-web
 
-# Navigate with arrows when input is empty
-# Use colon commands:
-:d    # or :diff    to view a diff for the selected agent
-:r    # or :restart to restart the selected agent
-:c    # or :cleanup to remove all agent containers and worktrees
-:q    # or :quit    to exit the TUI
+# Open your browser to http://localhost:8080
+# 1. Add Git repositories by entering their URLs
+# 2. Select a project to work with
+# 3. Create agents by entering goals
+# 4. Monitor agent progress in real-time
+# 5. View diffs and restart agents as needed
 
 # The first run will require Claude auth to set up your credentials volume:
 docker run -it --rm -v claude-code-credentials:/home/node/.claude node:20 claude auth
@@ -56,7 +59,7 @@ docker run -it --rm -v claude-code-credentials:/home/node/.claude node:20 claude
 
 ## How It Works
 
-1. **Creates Git Worktree**: Isolated workspace at `../worktrees/<name>`
+1. **Creates Git Worktree**: Isolated workspace at `~/.ags/worktrees/<name>`
 2. **Builds Docker Images**: Agent container + proxy container
 3. **Configures Security**: Sets up hooks and network restrictions
 4. **Runs Claude Code**: Executes with your goal, streams output
@@ -65,14 +68,25 @@ docker run -it --rm -v claude-code-credentials:/home/node/.claude node:20 claude
 ## Architecture
 
 ```
-┌─────────────────┐     ┌──────────────────┐
-│  Agent Container│────▶│  Proxy Container │────▶ Whitelisted
-│  (Claude Code)  │     │   (Tinyproxy)    │     Domains Only
-└─────────────────┘     └──────────────────┘
-         │
-         ▼
-   Git Worktree
-  (../worktrees/name)
+┌───────────┐     ┌──────────────┐     ┌─────────────────┐     ┌──────────────────┐
+│    Web    │────▶│   FastAPI    │────▶│  Agent Container│────▶│  Proxy Container │
+│ Interface │     │   Server     │  ┌─▶│  (Claude Code)  │     │   (Tinyproxy)    │
+└───────────┘     └──────────────┘  │  └─────────────────┘     └──────────────────┘
+                          │         │  ┌─────────────────┐     ┌──────────────────┐
+                          │         ├─▶│  Agent Container│────▶│  Proxy Container │
+                          │         │  │  (Claude Code)  │     │   (Tinyproxy)    │
+                          │         │  └─────────────────┘     └──────────────────┘
+                          │         │  ┌─────────────────┐     ┌──────────────────┐
+                          │         └─▶│  Agent Container│────▶│  Proxy Container │
+                          │            │  (Claude Code)  │     │   (Tinyproxy)    │
+                          │            └─────────────────┘     └──────────────────┘
+                          ▼                      │
+                      Database                   ▼
+                   (~/.ags/agents.db)      Git Worktrees
+                          │               (~/.ags/worktrees/<name>)
+                          ▼
+                    Git Clones
+                (~/.ags/projects/project-<hash>)
 ```
 
 ## Security Features
@@ -117,16 +131,19 @@ ags cleanup
 agent-process/
 ├── src/                   # Modular Python source
 │   ├── main.py            # CLI interface
+│   ├── server.py          # FastAPI server
+│   ├── api_client.py      # HTTP client for TUI
 │   ├── agent.py           # Agent orchestration
 │   ├── workspace.py       # Git/Docker management
 │   ├── diff.py            # Diff operations
 │   ├── log.py             # Log formatting
-│   ├── *_db.py            # Database modules
-│   └── tui/               # Terminal User Interface
-│       └── app.py         # Textual-based TUI
-├── requirements.txt       # Dependencies (click, docker, rich)
+│   └── *_db.py            # Database modules
+├── web/                   # Web interface
+│   └── index.html         # Single-page web application
+├── requirements.txt       # Dependencies (click, docker, rich, fastapi, uvicorn, requests)
 ├── bin/
-│   ├── ags                # CLI wrapper
+│   ├── ags-server         # Server startup script
+│   ├── ags-web            # Web interface server
 │   └── ags-test           # Test script
 ├── hooks/                 # Validation scripts
 ├── certs/                 # SSL certificates

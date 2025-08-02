@@ -1,0 +1,46 @@
+#!/bin/bash
+# Agent Sandbox (ags-web) - Serve the web interface
+
+set -e
+set -o pipefail
+
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Activate virtual environment
+source "$PROJECT_DIR/venv/bin/activate"
+
+# Set directory and port
+WEB_DIR="$PROJECT_DIR/web"
+PORT=8080
+
+echo "Serving Agent Sandbox web interface at http://localhost:$PORT"
+echo "Press Ctrl+C to stop"
+
+# Start simple HTTP server with CORS support
+cd "$WEB_DIR"
+exec python3 -c "
+import http.server
+import socketserver
+from pathlib import Path
+
+PORT = $PORT
+
+class CORSRequestHandler(http.server.SimpleHTTPRequestHandler):
+    def end_headers(self):
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        super().end_headers()
+    
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self.end_headers()
+
+try:
+    with socketserver.TCPServer(('', PORT), CORSRequestHandler) as httpd:
+        httpd.serve_forever()
+except KeyboardInterrupt:
+    print('\nShutting down...')
+"

@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Sandbox</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <style>
+        .spinner {
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #3b82f6;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto px-4 py-8 max-w-6xl">
+        <!-- Header -->
+        <h1 class="text-3xl font-bold text-gray-900 mb-8">Agent Sandbox</h1>
+        
+        <!-- Project Section -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 class="text-xl font-semibold mb-4">Projects</h2>
+            
+            <!-- Add Project Form -->
+            <div class="flex gap-2 mb-4">
+                <input type="text" id="gitUrl" placeholder="Git repository URL" 
+                    class="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <button id="addProject" class="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    Add Project
+                </button>
+            </div>
+            
+            <!-- Projects List -->
+            <div id="projectsList" class="space-y-2">
+                <div class="text-gray-500">Loading projects...</div>
+            </div>
+        </div>
+        
+        <!-- Agent Section -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 class="text-xl font-semibold mb-4">Agents</h2>
+            
+            <!-- Create Agent Form -->
+            <div id="createAgentForm" class="hidden mb-4">
+                <div class="mb-2">
+                    <label class="text-sm text-gray-600">Selected Project: <span id="selectedProject" class="font-semibold"></span></label>
+                </div>
+                <div class="flex gap-2">
+                    <input type="text" id="agentGoal" placeholder="Agent goal (min 10 chars)" 
+                        class="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <button id="createAgent" class="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500">
+                        Start Agent
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Agents Table -->
+            <div class="overflow-x-auto">
+                <table class="min-w-full">
+                    <thead>
+                        <tr class="border-b">
+                            <th class="text-left py-2">Status</th>
+                            <th class="text-left py-2">Goal</th>
+                            <th class="text-left py-2">Project</th>
+                            <th class="text-left py-2">Started</th>
+                            <th class="text-left py-2">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="agentsList">
+                        <tr><td colspan="5" class="text-gray-500 py-4">Select a project to view agents</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Diff Modal -->
+        <div id="diffModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+            <div class="bg-white rounded-lg max-w-4xl w-full max-h-[80vh] overflow-hidden">
+                <div class="p-4 border-b flex justify-between items-center">
+                    <h3 class="text-lg font-semibold">Agent Diff</h3>
+                    <button onclick="closeDiffModal()" class="text-gray-500 hover:text-gray-700">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+                <div class="p-4 overflow-y-auto max-h-[70vh]">
+                    <pre id="diffContent" class="text-sm font-mono whitespace-pre-wrap"></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE = 'http://localhost:8000';
+        let selectedProjectId = null;
+        let refreshInterval = null;
+        
+        // Check server health
+        async function checkHealth() {
+            try {
+                const response = await fetch(`${API_BASE}/health`);
+                return response.ok;
+            } catch (error) {
+                return false;
+            }
+        }
+        
+        // Load projects
+        async function loadProjects() {
+            try {
+                const response = await fetch(`${API_BASE}/projects`);
+                const projects = await response.json();
+                
+                const html = projects.map(project => `
+                    <div class="flex items-center justify-between p-3 border rounded-md hover:bg-gray-50">
+                        <div class="flex-1">
+                            <div class="font-semibold">${project.short_hash}</div>
+                            <div class="text-sm text-gray-600">${project.git_url}</div>
+                            <div class="text-xs text-gray-500">Branch: ${project.branch || 'unknown'} | Commit: ${project.latest_commit || 'unknown'}</div>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="selectProject('${project.short_hash}')" 
+                                class="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600">
+                                Select
+                            </button>
+                            <button onclick="pullProject('${project.short_hash}')" 
+                                class="px-3 py-1 text-sm bg-gray-500 text-white rounded hover:bg-gray-600">
+                                Pull
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+                
+                $('#projectsList').html(html || '<div class="text-gray-500">No projects found</div>');
+            } catch (error) {
+                $('#projectsList').html('<div class="text-red-500">Error loading projects</div>');
+            }
+        }
+        
+        // Add new project
+        $('#addProject').click(async function() {
+            const gitUrl = $('#gitUrl').val().trim();
+            if (!gitUrl) {
+                alert('Please enter a Git URL');
+                return;
+            }
+            
+            $(this).prop('disabled', true).html('<div class="spinner mx-auto"></div>');
+            
+            try {
+                const response = await fetch(`${API_BASE}/projects`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ git_url: gitUrl })
+                });
+                
+                if (response.ok) {
+                    $('#gitUrl').val('');
+                    await loadProjects();
+                } else {
+                    const error = await response.json();
+                    alert(`Error: ${error.detail}`);
+                }
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            } finally {
+                $(this).prop('disabled', false).text('Add Project');
+            }
+        });
+        
+        // Select project
+        window.selectProject = function(projectId) {
+            selectedProjectId = projectId;
+            $('#selectedProject').text(projectId);
+            $('#createAgentForm').removeClass('hidden');
+            loadAgents();
+            
+            // Start auto-refresh
+            if (refreshInterval) clearInterval(refreshInterval);
+            refreshInterval = setInterval(loadAgents, 2000);
+        };
+        
+        // Pull project
+        window.pullProject = async function(projectId) {
+            if (!confirm('Pull latest changes for this project?')) return;
+            
+            try {
+                const response = await fetch(`${API_BASE}/projects/${projectId}/pull`, {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    alert('Project updated successfully');
+                    await loadProjects();
+                } else {
+                    const error = await response.json();
+                    alert(`Error: ${error.detail}`);
+                }
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        };
+        
+        // Load agents
+        async function loadAgents() {
+            if (!selectedProjectId) return;
+            
+            try {
+                const response = await fetch(`${API_BASE}/agents?project_id=${selectedProjectId}`);
+                const agents = await response.json();
+                
+                const html = agents.map(agent => {
+                    const statusColor = {
+                        'AGENT_RUNNING': 'text-yellow-600',
+                        'AGENT_COMPLETE': 'text-blue-600',
+                        'DONE': 'text-green-600',
+                        'DONE_AND_NONE': 'text-gray-600',
+                        'ERROR': 'text-red-600'
+                    }[agent.status] || 'text-gray-600';
+                    
+                    return `
+                        <tr class="border-b">
+                            <td class="py-2 ${statusColor} font-semibold">${agent.diff_status || agent.status}</td>
+                            <td class="py-2">${agent.goal.length > 50 ? agent.goal.substring(0, 50) + '...' : agent.goal}</td>
+                            <td class="py-2">${agent.project_id}</td>
+                            <td class="py-2">${new Date(agent.started_at).toLocaleString()}</td>
+                            <td class="py-2">
+                                <button onclick="viewDiff('${agent.name}')" 
+                                    class="text-blue-500 hover:underline mr-2">Diff</button>
+                                <button onclick="restartAgent('${agent.name}')" 
+                                    class="text-green-500 hover:underline">Restart</button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+                
+                $('#agentsList').html(html || '<tr><td colspan="5" class="text-gray-500 py-4">No agents found</td></tr>');
+            } catch (error) {
+                $('#agentsList').html('<tr><td colspan="5" class="text-red-500 py-4">Error loading agents</td></tr>');
+            }
+        }
+        
+        // Create agent
+        $('#createAgent').click(async function() {
+            const goal = $('#agentGoal').val().trim();
+            if (goal.length < 10) {
+                alert('Goal must be at least 10 characters');
+                return;
+            }
+            
+            $(this).prop('disabled', true).html('<div class="spinner mx-auto"></div>');
+            
+            try {
+                const response = await fetch(`${API_BASE}/agents`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        goal: goal,
+                        project_id: selectedProjectId 
+                    })
+                });
+                
+                if (response.ok) {
+                    $('#agentGoal').val('');
+                    await loadAgents();
+                } else {
+                    const error = await response.json();
+                    alert(`Error: ${error.detail}`);
+                }
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            } finally {
+                $(this).prop('disabled', false).text('Start Agent');
+            }
+        });
+        
+        // View diff
+        window.viewDiff = async function(agentName) {
+            try {
+                const response = await fetch(`${API_BASE}/agents/${agentName}/diff`);
+                if (response.ok) {
+                    const diff = await response.json();
+                    $('#diffContent').text(diff.content);
+                    $('#diffModal').removeClass('hidden');
+                } else {
+                    alert('No diff available for this agent');
+                }
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        };
+        
+        // Close diff modal
+        window.closeDiffModal = function() {
+            $('#diffModal').addClass('hidden');
+        };
+        
+        // Restart agent
+        window.restartAgent = async function(agentName) {
+            if (!confirm('Restart this agent?')) return;
+            
+            try {
+                const response = await fetch(`${API_BASE}/agents/${agentName}/restart`, {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    await loadAgents();
+                } else {
+                    const error = await response.json();
+                    alert(`Error: ${error.detail}`);
+                }
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        };
+        
+        // Initialize
+        $(document).ready(async function() {
+            const healthy = await checkHealth();
+            if (!healthy) {
+                alert('Server is not available. Please start the server first.');
+                return;
+            }
+            
+            await loadProjects();
+        });
+        
+        // Cleanup on page unload
+        $(window).on('beforeunload', function() {
+            if (refreshInterval) clearInterval(refreshInterval);
+        });
+    </script>
+</body>
+</html>

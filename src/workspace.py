@@ -17,7 +17,7 @@ import docker
 class WorkspaceManager:
     """Manages git worktrees and Docker containers for agent execution."""
     
-    def __init__(self):
+    def __init__(self, project_path: Optional[Path] = None):
         self.console = Console()
         try:
             self.docker = docker.from_env()
@@ -25,21 +25,23 @@ class WorkspaceManager:
             self.console.print(f"[bold red]Error connecting to Docker:[/bold red] {e}")
             sys.exit(1)
         
+        self.project_path = project_path or Path.cwd()
         self.git_root = self._get_git_root()
-        self.worktree_dir = self.git_root.parent / "worktrees"
-        self.worktree_dir.mkdir(exist_ok=True)
+        self.worktree_dir = Path.home() / ".ags" / "worktrees"
+        self.worktree_dir.mkdir(parents=True, exist_ok=True)
     
     def _get_git_root(self) -> Path:
         """Get git repository root."""
         result = subprocess.run(
             ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True, check=True
+            capture_output=True, text=True, check=True,
+            cwd=str(self.project_path)
         )
         return Path(result.stdout.strip())
     
-    def _run_command(self, cmd: list[str]) -> subprocess.CompletedProcess:
+    def _run_command(self, cmd: list[str], cwd: Optional[str] = None) -> subprocess.CompletedProcess:
         """Run a command and return result."""
-        return subprocess.run(cmd, capture_output=True, text=True)
+        return subprocess.run(cmd, capture_output=True, text=True, cwd=cwd or str(self.project_path))
     
     def cleanup_existing_agent(self, agent_id: str):
         """Clean up any existing agent environment."""

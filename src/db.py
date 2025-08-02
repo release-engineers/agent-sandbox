@@ -19,6 +19,10 @@ class Database:
         """Initialize database schema. Override in subclasses."""
         pass
     
+    def _get_connection(self):
+        """Get a database connection."""
+        return sqlite3.connect(self.db_path)
+    
     def execute(self, query: str, params: tuple = (), fetch: bool = False):
         """Execute a query with proper locking."""
         with self._lock:
