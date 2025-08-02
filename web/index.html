@@ -169,9 +169,21 @@
         let selectedAgentName = null;
         let logsRefreshInterval = null;
         
+        // HTML escape function to prevent XSS
+        function escapeHtml(unsafe) {
+            if (unsafe === null || unsafe === undefined) return '';
+            return String(unsafe)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+        
         // Toast notification system
         function showToast(message, type = 'info') {
-            const toast = $(`<div class="toast ${type}">${message}</div>`);
+            const toast = $(`<div class="toast ${type}"></div>`);
+            toast.text(message); // Use .text() to prevent XSS
             $('#toastContainer').append(toast);
             
             setTimeout(() => toast.addClass('show'), 100);
@@ -199,13 +211,13 @@
                 
                 const html = projects.map(project => `
                     <div class="group p-2 rounded hover:bg-slate-50 cursor-pointer border-l-2 border-transparent hover:border-slate-300 transition-all" 
-                         onclick="selectProject('${project.short_hash}')">
+                         onclick="selectProject('${escapeHtml(project.short_hash)}')">
                         <div class="flex items-center justify-between">
                             <div class="flex-1 min-w-0">
-                                <div class="text-sm font-medium text-slate-900 truncate">${project.short_hash}</div>
-                                <div class="text-xs text-slate-500 truncate mt-0.5">${project.git_url.replace('https://github.com/', '')}</div>
+                                <div class="text-sm font-medium text-slate-900 truncate">${escapeHtml(project.short_hash)}</div>
+                                <div class="text-xs text-slate-500 truncate mt-0.5">${escapeHtml(project.git_url.replace('https://github.com/', ''))}</div>
                             </div>
-                            <button onclick="pullProject('${project.short_hash}'); event.stopPropagation();" 
+                            <button onclick="pullProject('${escapeHtml(project.short_hash)}'); event.stopPropagation();" 
                                 class="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-slate-600 transition-opacity">
                                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
@@ -289,7 +301,7 @@
             
             // Highlight selected project
             $('#projectsList .border-slate-900').removeClass('border-slate-900').addClass('border-transparent');
-            $(`#projectsList div[onclick="selectProject('${projectId}')"]`).removeClass('border-transparent').addClass('border-slate-900');
+            $(`#projectsList div[onclick="selectProject('${escapeHtml(projectId)}')"]`).removeClass('border-transparent').addClass('border-slate-900');
             
             loadAgents();
             
@@ -355,19 +367,19 @@
                     
                     return `
                         <div class="group p-2 rounded hover:bg-slate-50 cursor-pointer border-l-2 border-transparent hover:border-slate-300 transition-all" 
-                             onclick="selectAgent('${agent.name}')">
+                             onclick="selectAgent('${escapeHtml(agent.name)}')">
                             <div class="flex items-start gap-2">
                                 <span class="${statusColor} text-xs mt-0.5">${statusIcons[displayStatus] || '⭕'}</span>
                                 <div class="flex-1 min-w-0">
-                                    <div class="text-xs font-medium text-slate-900 truncate">${agent.goal}</div>
+                                    <div class="text-xs font-medium text-slate-900 truncate">${escapeHtml(agent.goal)}</div>
                                     <div class="flex items-center gap-2 mt-0.5">
                                         <span class="text-xs text-slate-500">${new Date(agent.started_at).toLocaleString()}</span>
-                                        <span class="text-xs bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded">${phaseLabels[agent.phase] || agent.phase}</span>
+                                        <span class="text-xs bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded">${escapeHtml(phaseLabels[agent.phase] || agent.phase)}</span>
                                     </div>
                                 </div>
                             </div>
                             <div class="flex gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button onclick="restartAgent('${agent.name}'); event.stopPropagation();" 
+                                <button onclick="restartAgent('${escapeHtml(agent.name)}'); event.stopPropagation();" 
                                     class="px-2 py-1 text-xs text-slate-600 hover:bg-slate-200 rounded">Restart</button>
                             </div>
                         </div>
@@ -415,10 +427,10 @@
                     const levelColor = levelColors[level] || 'text-slate-400';
                     
                     return `<div class="font-mono text-xs text-slate-300 mb-1">
-                        <span class="text-slate-500">[${timestamp}]</span>
-                        <span class="${levelColor}">${level}</span>
-                        ${log.tool_name ? `<span class="text-purple-400">[${log.tool_name}]</span>` : ''}
-                        <span class="ml-2">${log.message}</span>
+                        <span class="text-slate-500">[${escapeHtml(timestamp)}]</span>
+                        <span class="${levelColor}">${escapeHtml(level)}</span>
+                        ${log.tool_name ? `<span class="text-purple-400">[${escapeHtml(log.tool_name)}]</span>` : ''}
+                        <span class="ml-2">${escapeHtml(log.message)}</span>
                     </div>`;
                 }).join('');
                 
@@ -448,7 +460,7 @@
             
             // Highlight selected agent
             $('#agentsList .border-slate-900').removeClass('border-slate-900').addClass('border-transparent');
-            $(`#agentsList div[onclick="selectAgent('${agentName}')"]`).removeClass('border-transparent').addClass('border-slate-900');
+            $(`#agentsList div[onclick="selectAgent('${escapeHtml(agentName)}')"]`).removeClass('border-transparent').addClass('border-slate-900');
             
             // Update main content header
             $('#mainTitle').text(`Agent: ${agentName}`);
@@ -496,10 +508,10 @@
                         const levelColor = levelColors[level] || 'text-slate-400';
                         
                         return `<div class="font-mono text-xs text-slate-300 mb-1">
-                            <span class="text-slate-500">[${timestamp}]</span>
-                            <span class="${levelColor}">${level}</span>
-                            ${log.tool_name ? `<span class="text-purple-400">[${log.tool_name}]</span>` : ''}
-                            <span class="ml-2">${log.message}</span>
+                            <span class="text-slate-500">[${escapeHtml(timestamp)}]</span>
+                            <span class="${levelColor}">${escapeHtml(level)}</span>
+                            ${log.tool_name ? `<span class="text-purple-400">[${escapeHtml(log.tool_name)}]</span>` : ''}
+                            <span class="ml-2">${escapeHtml(log.message)}</span>
                         </div>`;
                     }).join('');
                     logsContent = logsHtml || '<div class="text-slate-500 text-center py-8 w-full">No logs found</div>';
@@ -519,7 +531,7 @@
                 const tabs = results.map((result, index) => {
                     const label = phaseLabels[result.phase] || result.phase;
                     return `<button class="tab-button px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 border-b-2 ${index === 0 ? 'border-slate-900 text-slate-900' : 'border-transparent'}" 
-                                    data-index="${index}">${label}</button>`;
+                                    data-index="${index}">${escapeHtml(label)}</button>`;
                 }).join('');
                 
                 const tabContents = results.map((result, index) => {
@@ -539,12 +551,12 @@
                                         <div class="text-sm text-blue-600">Tests Passed</div>
                                     </div>
                                 </div>
-                                <pre class="mt-4 p-4 bg-slate-100 rounded text-xs overflow-auto">${JSON.stringify(result.metadata, null, 2)}</pre>
+                                <pre class="mt-4 p-4 bg-slate-100 rounded text-xs overflow-auto">${escapeHtml(JSON.stringify(result.metadata, null, 2))}</pre>
                             </div>
                         `;
                     } else {
                         // Display content as text/diff
-                        content = `<pre class="h-full p-4 text-xs font-mono text-slate-800 whitespace-pre-wrap overflow-x-auto">${result.content || 'No content available'}</pre>`;
+                        content = `<pre class="h-full p-4 text-xs font-mono text-slate-800 whitespace-pre-wrap overflow-x-auto">${escapeHtml(result.content || 'No content available')}</pre>`;
                     }
                     
                     return `<div class="tab-content ${index === 0 ? '' : 'hidden'}" data-index="${index}">${content}</div>`;
@@ -558,7 +570,7 @@
                             ${results.length > 0 ? `
                                 <div class="border-b border-slate-200 flex">
                                     ${tabs}
-                                    <button class="ml-auto px-4 py-2 text-sm text-slate-600 hover:text-slate-900" onclick="runQualityCheck('${agentName}')">
+                                    <button class="ml-auto px-4 py-2 text-sm text-slate-600 hover:text-slate-900" onclick="runQualityCheck('${escapeHtml(agentName)}')">
                                         Run Quality Check
                                     </button>
                                 </div>
@@ -594,7 +606,7 @@
                     <div class="h-full flex items-center justify-center text-red-600">
                         <div class="text-center">
                             <p>Error loading agent details</p>
-                            <p class="text-sm mt-2">${error.message}</p>
+                            <p class="text-sm mt-2">${escapeHtml(error.message)}</p>
                         </div>
                     </div>
                 `);
