@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 import docker
 from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 import click
 
 class AgentSandbox:
@@ -24,6 +25,7 @@ class AgentSandbox:
         self.proxy_container_name = None
         # Get the agent-sandbox project root (where this script is)
         self.project_root = Path(__file__).parent.parent
+        self.live = None
         
     def create_workspace_copy(self):
         """Create a temporary copy of the current working directory."""
@@ -35,7 +37,6 @@ class AgentSandbox:
         # Create temp directory for workspace
         self.temp_workspace = Path(tempfile.mkdtemp(prefix=f"agent-sandbox-{timestamp}-"))
         
-        self.console.print(f"→ Creating workspace copy at {self.temp_workspace}")
         
         # Copy current directory to temp workspace, excluding .git and other large dirs
         ignore_patterns = shutil.ignore_patterns('.git', 'node_modules', '__pycache__', '*.pyc', '.DS_Store')
@@ -70,11 +71,9 @@ class AgentSandbox:
         with open(settings_file, 'w') as f:
             json.dump(settings, f, indent=2)
         
-        self.console.print("→ Created Claude settings with hooks")
     
     def build_images(self):
         """Build required Docker images."""
-        self.console.print("→ Building Docker images...")
         
         # Build agent image
         self.docker_client.images.build(
@@ -83,7 +82,6 @@ class AgentSandbox:
             tag="claude-code-agent:latest",
             rm=True
         )
-        self.console.print("  ✓ Agent image built")
         
         # Build proxy image
         self.docker_client.images.build(
@@ -92,16 +90,13 @@ class AgentSandbox:
             tag="claude-code-proxy:latest",
             rm=True
         )
-        self.console.print("  ✓ Proxy image built")
     
     def ensure_network(self):
         """Create the Docker network."""
-        self.console.print(f"→ Creating Docker network: {self.network_name}")
         self.docker_client.networks.create(self.network_name, driver="bridge")
     
     def start_proxy_container(self):
         """Start the proxy container."""
-        self.console.print(f"→ Starting proxy container: {self.proxy_container_name}")
         
         proxy_container = self.docker_client.containers.run(
             "claude-code-proxy:latest",
@@ -115,8 +110,6 @@ class AgentSandbox:
     
     def run_interactive_shell(self, workspace_path):
         """Run an interactive shell in the agent container."""
-        self.console.print("→ Starting interactive shell...")
-        
         # Build command to run interactive shell
         hooks_dir = self.project_root / "hooks"
         docker_cmd = [
@@ -144,7 +137,6 @@ class AgentSandbox:
     
     def generate_diff(self, workspace_path):
         """Generate diff between original and modified workspace."""
-        self.console.print("→ Generating diff...")
         
         # Create diff file
         diff_file = self.cwd / f"sandbox-diff-{self.sandbox_name}.patch"
@@ -160,64 +152,118 @@ class AgentSandbox:
         if result.stdout:
             with open(diff_file, 'wb') as f:
                 f.write(result.stdout)
-            self.console.print(f"  ✓ Diff saved to: [green]{diff_file}[/green]")
+            return diff_file
         else:
-            self.console.print("  ✓ No changes detected")
+            return None
     
-    def cleanup(self):
-        """Clean up temporary workspace and containers."""
-        self.console.print("\n→ Starting cleanup...")
-        
-        # Stop proxy container (auto_remove should handle removal)
-        self.console.print(f"→ Stopping proxy container: {self.proxy_container_name}")
+    def cleanup_containers(self):
+        """Stop proxy container."""
         try:
             proxy = self.docker_client.containers.get(self.proxy_container_name)
             proxy.stop()
-            self.console.print(f"  ✓ Proxy container stopped")
         except:
-            self.console.print(f"  ✓ Proxy container already stopped")
-        
-        # Remove network
-        self.console.print(f"→ Removing network: {self.network_name}")
+            pass
+    
+    def cleanup_network(self):
+        """Remove Docker network."""
         try:
             network = self.docker_client.networks.get(self.network_name)
             network.remove()
-            self.console.print(f"  ✓ Network removed")
         except:
-            self.console.print(f"  ✓ Network already removed")
-        
-        # Remove temporary workspace
-        self.console.print(f"→ Removing temporary workspace: {self.temp_workspace}")
-        shutil.rmtree(self.temp_workspace)
-        self.console.print(f"  ✓ Temporary workspace removed")
-        
-        self.console.print("\n✓ Cleanup completed")
+            pass
+    
+    def cleanup_workspace(self):
+        """Remove temporary workspace."""
+        if self.temp_workspace and self.temp_workspace.exists():
+            shutil.rmtree(self.temp_workspace)
+    
+    def cleanup(self):
+        """Clean up all resources."""
+        self.cleanup_containers()
+        self.cleanup_network() 
+        self.cleanup_workspace()
     
     def run(self):
         """Main execution flow."""
-        try:
-            # Build images if needed
-            self.build_images()
+        # Setup progress display
+        progress = Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(complete_style="green", finished_style="green"),
+            TaskProgressColumn(),
+            console=self.console
+        )
+        
+        with progress:
+            # Startup progress
+            startup_task = progress.add_task("Starting agent sandbox...", total=4)
             
-            # Create workspace copy
-            workspace_path = self.create_workspace_copy()
-            
-            # Setup Claude settings if hooks exist
-            self.setup_claude_settings(workspace_path)
-            
-            # Ensure network and start proxy
-            self.ensure_network()
-            self.start_proxy_container()
-            
-            # Run interactive shell
-            self.run_interactive_shell(workspace_path)
-            
-            # Generate diff after shell exits
-            self.generate_diff(workspace_path)
-            
-        finally:
-            # Always cleanup
-            self.cleanup()
+            try:
+                # Build images if needed
+                progress.update(startup_task, description="Building Docker images...", completed=0)
+                self.build_images()
+                
+                # Create workspace copy
+                progress.update(startup_task, description="Creating workspace copy...", completed=1)
+                workspace_path = self.create_workspace_copy()
+                
+                # Setup Claude settings
+                progress.update(startup_task, description="Setting up Claude configuration...", completed=2)
+                self.setup_claude_settings(workspace_path)
+                
+                # Ensure network and start proxy
+                progress.update(startup_task, description="Creating network and proxy...", completed=3)
+                self.ensure_network()
+                self.start_proxy_container()
+                
+                # Complete startup
+                progress.update(startup_task, description="✓ Sandbox ready", completed=4)
+                progress.stop()
+                
+                # Clear and show ready message
+                self.console.clear()
+                self.console.print("[green]✓ Agent sandbox ready[/green]")
+                self.console.print()
+                
+                # Run interactive shell
+                self.run_interactive_shell(workspace_path)
+                
+                # After shell exits, start cleanup
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn("[progress.description]{task.description}"),
+                    BarColumn(complete_style="blue", finished_style="blue"),
+                    TaskProgressColumn(),
+                    console=self.console
+                ) as cleanup_progress:
+                    cleanup_task = cleanup_progress.add_task("Cleaning up sandbox...", total=4)
+                    
+                    cleanup_progress.update(cleanup_task, description="Generating diff...", completed=0)
+                    diff_file = self.generate_diff(workspace_path)
+                    
+                    cleanup_progress.update(cleanup_task, description="Stopping containers...", completed=1)
+                    self.cleanup_containers()
+                    
+                    cleanup_progress.update(cleanup_task, description="Removing network...", completed=2)
+                    self.cleanup_network()
+                    
+                    cleanup_progress.update(cleanup_task, description="Removing workspace...", completed=3)
+                    self.cleanup_workspace()
+                    
+                    cleanup_progress.update(cleanup_task, description="✓ Cleanup complete", completed=4)
+                
+                # Show diff result after cleanup
+                self.console.print()
+                if diff_file:
+                    self.console.print(f"[blue]→[/blue] Diff saved to: [green]{diff_file.name}[/green]")
+                else:
+                    self.console.print("[blue]→[/blue] No changes detected")
+                
+            except Exception as e:
+                progress.stop()
+                self.console.print(f"[red]Error: {e}[/red]")
+                self.cleanup()
+                raise
 
 
 @click.command()
