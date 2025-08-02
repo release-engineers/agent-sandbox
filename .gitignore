@@ -2,3 +2,8 @@ example/.git
 worktrees/*
 .claude/*
 *.db
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python

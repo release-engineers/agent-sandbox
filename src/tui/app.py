@@ -71,24 +71,38 @@ class AgentApp(App):
         background: transparent;
     }
     
-    Container {
+    .main-container {
         border: none;
         background: transparent;
+        height: 100%;
+        layout: vertical;
+    }
+    
+    .table-container {
+        border: none;
+        background: transparent;
+        height: 1fr;
     }
     
     DataTable {
         border: none;
         background: transparent;
         width: 100%;
+        height: 100%;
     }
     
     DataTable > .datatable--header {
         background: transparent;
     }
     
+    .input-container {
+        height: auto;
+        border: none;
+        background: transparent;
+    }
+    
     Input {
         border: solid gray;
-        dock: bottom;
         background: transparent;
         margin: 0 1;
     }
