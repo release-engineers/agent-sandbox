@@ -13,7 +13,7 @@ class LogDatabase(Database):
     def _init_database(self):
         """Initialize log-related database schema."""
         self.execute("""
-            CREATE TABLE IF NOT EXISTS logs (
+            CREATE TABLE IF NOT EXISTS agent_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 agent_name TEXT,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -27,14 +27,14 @@ class LogDatabase(Database):
             )
         """)
         
-        self.execute("CREATE INDEX IF NOT EXISTS idx_logs_agent_name ON logs(agent_name)")
-        self.execute("CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp)")
+        self.execute("CREATE INDEX IF NOT EXISTS idx_agent_logs_agent_name ON agent_logs(agent_name)")
+        self.execute("CREATE INDEX IF NOT EXISTS idx_agent_logs_timestamp ON agent_logs(timestamp)")
     
     def log_message(self, agent_name: str, message: str, level: str = "INFO", 
                    tool_name: str = None, tool_type: str = None, raw_log: str = None):
         """Log a message for an agent."""
         self.execute("""
-            INSERT INTO logs (agent_name, level, message, tool_name, tool_type, raw_log)
+            INSERT INTO agent_logs (agent_name, level, message, tool_name, tool_type, raw_log)
             VALUES (?, ?, ?, ?, ?, ?)
         """, (agent_name, level, message, tool_name, tool_type, raw_log))
     
@@ -53,14 +53,14 @@ class LogDatabase(Database):
         
         if timestamp_sql:
             self.execute("""
-                INSERT INTO logs (agent_name, timestamp, tool_name, hook_event, 
+                INSERT INTO agent_logs (agent_name, timestamp, tool_name, hook_event, 
                                 tool_input, level, raw_log)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (agent_name, timestamp_sql, tool_name, hook_event, 
                  json.dumps(tool_input), "TOOL", raw_log))
         else:
             self.execute("""
-                INSERT INTO logs (agent_name, tool_name, hook_event, 
+                INSERT INTO agent_logs (agent_name, tool_name, hook_event, 
                                 tool_input, level, raw_log)
                 VALUES (?, ?, ?, ?, ?, ?)
             """, (agent_name, tool_name, hook_event, 
@@ -70,7 +70,7 @@ class LogDatabase(Database):
         """Get all logs for an agent."""
         return self.fetch_all("""
             SELECT timestamp, level, message, tool_name, tool_type, hook_event, tool_input, raw_log
-            FROM logs
+            FROM agent_logs
             WHERE agent_name = ?
             ORDER BY timestamp
         """, (agent_name,))
