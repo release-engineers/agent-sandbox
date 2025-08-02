@@ -15,7 +15,7 @@ import click
 class AgentSandbox:
     """Manages interactive sandbox environments with copy-on-write workspaces."""
     
-    def __init__(self):
+    def __init__(self, command=None, interactive=True):
         self.console = Console()
         self.docker_client = docker.from_env()
         self.cwd = Path.cwd()
@@ -26,6 +26,8 @@ class AgentSandbox:
         # Get the agent-sandbox project root (where this script is)
         self.project_root = Path(__file__).parent.parent
         self.live = None
+        self.command = command
+        self.interactive = interactive
         
     def create_workspace_copy(self):
         """Create a temporary copy of the current working directory."""
@@ -38,9 +40,8 @@ class AgentSandbox:
         self.temp_workspace = Path(tempfile.mkdtemp(prefix=f"agent-sandbox-{timestamp}-"))
         
         
-        # Copy current directory to temp workspace, excluding .git and other large dirs
-        ignore_patterns = shutil.ignore_patterns('.git', 'node_modules', '__pycache__', '*.pyc', '.DS_Store')
-        shutil.copytree(self.cwd, self.temp_workspace / "workspace", ignore=ignore_patterns)
+        # Copy current directory to temp workspace
+        shutil.copytree(self.cwd, self.temp_workspace / "workspace")
         
         return self.temp_workspace / "workspace"
     
@@ -108,15 +109,13 @@ class AgentSandbox:
         
         return proxy_container
     
-    def run_interactive_shell(self, workspace_path):
-        """Run an interactive shell in the agent container."""
-        # Build command to run interactive shell
+    def run_container(self, workspace_path, command=None, interactive=True):
+        """Run a container with optional command and interactive mode."""
+        # Build command to run container
         hooks_dir = self.project_root / "hooks"
         docker_cmd = [
             "docker", "run",
             "--rm",
-            "--interactive",
-            "--tty",
             "--name", f"agent-sandbox-{self.sandbox_name}",
             "--volume", f"{workspace_path}:/workspace",
             "--volume", f"{hooks_dir}:/hooks:ro",
@@ -128,11 +127,24 @@ class AgentSandbox:
             "--env", f"HTTP_PROXY=http://{self.proxy_container_name}:3128",
             "--env", f"HTTPS_PROXY=http://{self.proxy_container_name}:3128",
             "--env", "NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt",
-            "claude-code-agent:latest",
-            "/bin/bash"
         ]
         
-        # Run interactive shell
+        # Add interactive and tty flags if needed
+        if interactive:
+            docker_cmd.extend(["--interactive", "--tty"])
+        
+        # Add the image
+        docker_cmd.append("claude-code-agent:latest")
+        
+        # Add command to run
+        if command:
+            # If command is provided, run it through bash -c
+            docker_cmd.extend(["/bin/bash", "-c", command])
+        else:
+            # Default to interactive bash shell
+            docker_cmd.append("/bin/bash")
+        
+        # Run container
         subprocess.run(docker_cmd)
     
     def generate_diff(self, workspace_path):
@@ -141,13 +153,10 @@ class AgentSandbox:
         # Create diff file
         diff_file = self.cwd / f"sandbox-diff-{self.sandbox_name}.patch"
         
-        # Generate diff using git diff
-        cmd = [
-            "git", "diff", "--no-index", "--no-prefix",
-            str(self.cwd), str(workspace_path)
-        ]
+        # Run git diff from within the workspace directory
+        cmd = ["git", "diff"]
         
-        result = subprocess.run(cmd, capture_output=True)
+        result = subprocess.run(cmd, capture_output=True, cwd=str(workspace_path))
         
         if result.stdout:
             with open(diff_file, 'wb') as f:
@@ -225,8 +234,8 @@ class AgentSandbox:
                 self.console.print("[green]✓ Agent sandbox ready[/green]")
                 self.console.print()
                 
-                # Run interactive shell
-                self.run_interactive_shell(workspace_path)
+                # Run container with command or interactive shell
+                self.run_container(workspace_path, self.command, self.interactive)
                 
                 # After shell exits, start cleanup
                 with Progress(
@@ -267,9 +276,19 @@ class AgentSandbox:
 
 
 @click.command()
-def sandbox():
-    """Launch an interactive agent sandbox environment."""
-    sandbox = AgentSandbox()
+@click.argument('command', nargs=-1)
+@click.option('--noninteractive', is_flag=True, help='Run without interactive TTY')
+def sandbox(command, noninteractive):
+    """Launch an agent sandbox environment.
+    
+    COMMAND: Optional command to run in the sandbox. If not provided, launches an interactive shell.
+    """
+    # Join command parts if provided
+    command_str = ' '.join(command) if command else None
+    # Interactive is True by default, unless --noninteractive is set
+    interactive = not noninteractive
+    
+    sandbox = AgentSandbox(command=command_str, interactive=interactive)
     sandbox.run()
 
 

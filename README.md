@@ -29,15 +29,22 @@ export PATH=$PATH:/path/to/agent-sandbox/bin
 ### Basic Usage
 
 ```bash
-# Launch an interactive sandbox
+# Launch an interactive sandbox (default)
 agent-sandbox
+
+# Run a specific command in the sandbox
+agent-sandbox touch example.md
+agent-sandbox npm install express
+
+# Run without interactive TTY (useful for scripts/automation)
+agent-sandbox --noninteractive echo "Hello from sandbox"
 
 # The tool will:
 # 1. Build Docker images (if needed)
 # 2. Create a temporary copy of your current directory
 # 3. Start a proxy container for network isolation
-# 4. Launch an interactive bash shell in the container
-# 5. Generate a diff file when you exit
+# 4. Run your command or launch an interactive bash shell
+# 5. Generate a diff file when done
 ```
 
 
@@ -50,36 +57,39 @@ The sandbox container includes:
 - Go programming language
 - sudo access for the node user
 
-## Example
+## Examples
 
+### Interactive Session
 ```bash
 $ agent-sandbox
-→ Building Docker images...
-  ✓ Agent image built
-  ✓ Proxy image built
-→ Creating workspace copy at /tmp/agent-sandbox-20240108-143022-abc123/workspace
-→ Created Claude settings with hooks
-→ Creating Docker network: agent-network-sandbox-20240108-143022
-→ Starting proxy container: proxy-sandbox-20240108-143022
-→ Starting interactive shell...
+✓ Agent sandbox ready
 
 node@container:/workspace$ # You're now in the sandbox!
 node@container:/workspace$ npm install express
 node@container:/workspace$ echo "console.log('test')" > test.js
 node@container:/workspace$ exit
 
-→ Generating diff...
-  ✓ Diff saved to: sandbox-diff-sandbox-20240108-143022.patch
+→ Diff saved to: sandbox-diff-sandbox-20240108-143022.patch
+```
 
-→ Starting cleanup...
-→ Stopping proxy container: proxy-sandbox-20240108-143022
-  ✓ Proxy container stopped
-→ Removing network: agent-network-sandbox-20240108-143022
-  ✓ Network removed
-→ Removing temporary workspace: /tmp/agent-sandbox-20240108-143022-abc123
-  ✓ Temporary workspace removed
+### Running Commands
+```bash
+# Create a file in the sandbox
+$ agent-sandbox touch example.md
+✓ Agent sandbox ready
 
-✓ Cleanup completed
+→ Diff saved to: sandbox-diff-sandbox-20240108-143023.patch
+
+# Run multiple commands
+$ agent-sandbox "npm install && npm test"
+✓ Agent sandbox ready
+
+[npm output...]
+
+→ Diff saved to: sandbox-diff-sandbox-20240108-143024.patch
+
+# Non-interactive mode for scripts
+$ agent-sandbox --noninteractive ls -la > sandbox-files.txt
 ```
 
 ## Network Isolation
