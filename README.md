@@ -68,23 +68,31 @@ docker run -it --rm -v claude-code-credentials:/home/node/.claude claude-code-ag
 ## Architecture
 
 ```
-┌───────────┐     ┌──────────────┐     ┌─────────────────┐     ┌──────────────────┐
-│    Web    │────▶│   FastAPI    │────▶│  Agent Container│────▶│  Proxy Container │
-│ Interface │     │   Server     │  ┌─▶│  (Claude Code)  │     │   (Tinyproxy)    │
-└───────────┘     └──────────────┘  │  └─────────────────┘     └──────────────────┘
-                          │         │  ┌─────────────────┐     ┌──────────────────┐
-                          │         ├─▶│  Agent Container│────▶│  Proxy Container │
-                          │         │  │  (Claude Code)  │     │   (Tinyproxy)    │
-                          │         │  └─────────────────┘     └──────────────────┘
-                          │         │  ┌─────────────────┐     ┌──────────────────┐
-                          │         └─▶│  Agent Container│────▶│  Proxy Container │
-                          │            │  (Claude Code)  │     │   (Tinyproxy)    │
-                          │            └─────────────────┘     └──────────────────┘
-                          ▼                      │
-                      Database                   ▼
-                   (~/.ags/agents.db)      Git Worktrees
-                          │               (~/.ags/worktrees/<name>)
-                          ▼
+┌───────────┐     ┌──────────────┐
+│    Web    │────▶│   FastAPI    │
+│ Interface │     │   Server     │
+└───────────┘     └──────┬───────┘
+                         │
+                         ├────▶ ┌─────────────────┐     ┌──────────────────┐
+                         │      │  Agent Container│────▶│  Proxy Container │
+                         │      │  (Claude Code)  │     │   (Tinyproxy)    │
+                         │      └─────────────────┘     └──────────────────┘
+                         │                                        │
+                         ├────▶ ┌─────────────────┐     ┌──────────────────┐
+                         │      │  Agent Container│────▶│  Proxy Container │
+                         │      │  (Claude Code)  │     │   (Tinyproxy)    │
+                         │      └─────────────────┘     └──────────────────┘
+                         │                                        │
+                         ├────▶ ┌─────────────────┐     ┌──────────────────┐
+                         │      │  Agent Container│────▶│  Proxy Container │
+                         │      │  (Claude Code)  │     │   (Tinyproxy)    │
+                         │      └─────────────────┘     └──────────────────┘
+                         │                │                        │
+                         ▼                ▼                        ▼
+                     Database        Git Worktrees            Internet
+                   (~/.ags/agents.db)  (~/.ags/worktrees/<name>)  (Whitelisted)
+                         │
+                         ▼
                     Git Clones
                 (~/.ags/projects/project-<hash>)
 ```
