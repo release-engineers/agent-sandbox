@@ -17,34 +17,27 @@ A minimal CLI tool that provides an isolated Docker environment for safe experim
 # Install dependencies
 pip install -r requirements.txt
 
-# Make the binary executable
-chmod +x bin/agent-sandbox
-
 # Add to your PATH (optional)
 export PATH=$PATH:/path/to/agent-sandbox/bin
 ```
 
 ## Usage
 
-### Basic Usage
-
 ```bash
-# Launch an interactive sandbox (default)
-agent-sandbox
+# Launch Claude Code in a sandbox
+cd my-git-project
+agent-sandbox -- claude --dangerously-skip-permissions --print "Set up a simple FastAPI project."
 
-# Run a specific command in the sandbox
-agent-sandbox touch example.md
-agent-sandbox npm install express
+# Run without interactive TTY
 
-# Run without interactive TTY (useful for scripts/automation)
-agent-sandbox --noninteractive echo "Hello from sandbox"
+agent-sandbox --noninteractive -- echo "Hello from sandbox"
 
 # The tool will:
-# 1. Build Docker images (if needed)
-# 2. Create a temporary copy of your current directory
-# 3. Start a proxy container for network isolation
-# 4. Run your command or launch an interactive bash shell
-# 5. Generate a diff file when done
+# 1. Create a temporary copy of your current directory
+# 2. Start a proxy container for network isolation
+# 3. Start an agent container with access only to the proxy
+# 4. Run your command or launch an interactive shell
+# 5. Place a diff of the changes after the sandbox closes
 ```
 
 
@@ -52,10 +45,10 @@ agent-sandbox --noninteractive echo "Hello from sandbox"
 
 The sandbox container includes:
 - Node.js 20 with Claude Code CLI pre-installed
-- Git, GitHub CLI (gh)
-- Development tools: vim, fzf, jq, curl, wget
-- Go programming language
-- sudo access for the node user
+- Your host's `.claude.json` configuration mounted
+- A Docker volume to persist Claude Code credentials
+- Common development tools: Git, GitHub CLI, vim, curl and [more](Dockerfile.agent)
+- sudo access
 
 ## Examples
 
@@ -79,17 +72,6 @@ $ agent-sandbox touch example.md
 ✓ Agent sandbox ready
 
 → Diff saved to: sandbox-diff-sandbox-20240108-143023.patch
-
-# Run multiple commands
-$ agent-sandbox "npm install && npm test"
-✓ Agent sandbox ready
-
-[npm output...]
-
-→ Diff saved to: sandbox-diff-sandbox-20240108-143024.patch
-
-# Non-interactive mode for scripts
-$ agent-sandbox --noninteractive ls -la > sandbox-files.txt
 ```
 
 ## Network Isolation
@@ -115,10 +97,10 @@ The sandbox automatically mounts hooks from the `hooks/` directory to control Cl
 
 ## Applying Changes
 
-To apply the changes from a sandbox session to your actual project:
+The sandbox generates a diff of all changes (including new files) when you exit, respecting `.gitignore` rules.
 
 ```bash
-# Review the diff first
+# Review the diff
 cat sandbox-diff-*.patch
 
 # Apply the patch
@@ -139,3 +121,4 @@ These are built automatically on first run or can be rebuilt with `--rebuild`.
 - Python 3.8+
 - Docker
 - Git
+- Claude CLI JSON (`~/.claude.json` must exist)

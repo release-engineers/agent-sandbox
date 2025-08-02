@@ -111,6 +111,10 @@ class AgentSandbox:
     
     def run_container(self, workspace_path, command=None, interactive=True):
         """Run a container with optional command and interactive mode."""
+        # Create persistent volume for Claude Code credentials
+        subprocess.run(["docker", "volume", "create", "claude-code-credentials"], 
+                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
         # Build command to run container
         hooks_dir = self.project_root / "hooks"
         docker_cmd = [
@@ -119,6 +123,7 @@ class AgentSandbox:
             "--name", f"agent-sandbox-{self.sandbox_name}",
             "--volume", f"{workspace_path}:/workspace",
             "--volume", f"{hooks_dir}:/hooks:ro",
+            "--volume", "claude-code-credentials:/home/node/.claude",
             "--workdir", "/workspace",
             "--user", "node",
             "--network", self.network_name,
@@ -129,6 +134,12 @@ class AgentSandbox:
             "--env", "NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt",
         ]
         
+        # Mount host's .claude.json (required)
+        host_claude_json = Path.home() / ".claude.json"
+        if not host_claude_json.exists():
+            raise FileNotFoundError(f"Claude configuration not found at {host_claude_json}. Please run 'claude auth' first.")
+        docker_cmd.extend(["--volume", f"{host_claude_json}:/home/node/.claude.json"])
+        
         # Add interactive and tty flags if needed
         if interactive:
             docker_cmd.extend(["--interactive", "--tty"])
@@ -138,8 +149,8 @@ class AgentSandbox:
         
         # Add command to run
         if command:
-            # If command is provided, run it through bash -c
-            docker_cmd.extend(["/bin/bash", "-c", command])
+            # Command is always a list now
+            docker_cmd.extend(command)
         else:
             # Default to interactive bash shell
             docker_cmd.append("/bin/bash")
@@ -153,16 +164,20 @@ class AgentSandbox:
         # Create diff file
         diff_file = self.cwd / f"sandbox-diff-{self.sandbox_name}.patch"
         
-        # Run git diff from within the workspace directory
-        cmd = ["git", "diff"]
+        # Add all changes to the index (respecting .gitignore)
+        subprocess.run(["git", "add", "-A"], cwd=str(workspace_path), capture_output=True)
         
-        result = subprocess.run(cmd, capture_output=True, cwd=str(workspace_path))
+        # Generate diff and write directly to file
+        with open(diff_file, 'w') as f:
+            result = subprocess.run(["git", "diff", "--cached"], 
+                                  cwd=str(workspace_path), 
+                                  stdout=f)
         
-        if result.stdout:
-            with open(diff_file, 'wb') as f:
-                f.write(result.stdout)
+        # Check if diff file has content
+        if diff_file.stat().st_size > 0:
             return diff_file
         else:
+            diff_file.unlink()  # Remove empty file
             return None
     
     def cleanup_containers(self):
@@ -283,12 +298,12 @@ def sandbox(command, noninteractive):
     
     COMMAND: Optional command to run in the sandbox. If not provided, launches an interactive shell.
     """
-    # Join command parts if provided
-    command_str = ' '.join(command) if command else None
+    # Pass command as list to preserve arguments
+    command_list = list(command) if command else None
     # Interactive is True by default, unless --noninteractive is set
     interactive = not noninteractive
     
-    sandbox = AgentSandbox(command=command_str, interactive=interactive)
+    sandbox = AgentSandbox(command=command_list, interactive=interactive)
     sandbox.run()
 
 
