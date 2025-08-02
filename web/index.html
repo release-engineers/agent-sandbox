@@ -8,119 +8,167 @@
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <style>
         .spinner {
-            border: 2px solid #f3f3f3;
-            border-top: 2px solid #3b82f6;
+            border: 2px solid #f1f5f9;
+            border-top: 2px solid #64748b;
             border-radius: 50%;
-            width: 20px;
-            height: 20px;
+            width: 16px;
+            height: 16px;
             animation: spin 1s linear infinite;
         }
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        .toast {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            z-index: 50;
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            color: white;
+            font-size: 0.875rem;
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+        }
+        .toast.show {
+            transform: translateX(0);
+        }
+        .toast.success { background-color: #059669; }
+        .toast.error { background-color: #dc2626; }
+        .toast.info { background-color: #2563eb; }
+        .slide-panel {
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+        }
+        .slide-panel.show {
+            transform: translateX(0);
+        }
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.375rem;
+            padding: 0.25rem 0.625rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+        .status-running { background-color: #fef3c7; color: #92400e; }
+        .status-complete { background-color: #dbeafe; color: #1e40af; }
+        .status-done { background-color: #d1fae5; color: #065f46; }
+        .status-done-none { background-color: #f1f5f9; color: #475569; }
+        .status-error { background-color: #fee2e2; color: #991b1b; }
     </style>
 </head>
-<body class="bg-gray-100">
-    <div class="container mx-auto px-4 py-8 max-w-6xl">
-        <!-- Header -->
-        <h1 class="text-3xl font-bold text-gray-900 mb-8">Agent Sandbox</h1>
-        
-        <!-- Project Section -->
-        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
-            <h2 class="text-xl font-semibold mb-4">Projects</h2>
-            
-            <!-- Add Project Form -->
-            <div class="flex gap-2 mb-4">
-                <input type="text" id="gitUrl" placeholder="Git repository URL" 
-                    class="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <button id="addProject" class="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    Add Project
-                </button>
+<body class="bg-slate-50">
+    <!-- IDE Layout: Sidebar + Main Content -->
+    <div class="flex h-screen bg-slate-100">
+        <!-- Left Sidebar -->
+        <div class="w-80 bg-white border-r border-slate-200 flex flex-col">
+            <!-- Header -->
+            <div class="p-4 border-b border-slate-200">
+                <h1 class="text-lg font-semibold text-slate-900">Agent Sandbox</h1>
+                <p class="text-xs text-slate-600 mt-1">Manage projects and AI agents</p>
             </div>
             
-            <!-- Projects List -->
-            <div id="projectsList" class="space-y-2">
-                <div class="text-gray-500">Loading projects...</div>
+            <!-- Projects Section -->
+            <div class="flex-1 overflow-y-auto">
+                <div class="p-4">
+                    <div class="flex items-center justify-between mb-3">
+                        <h2 class="text-sm font-medium text-slate-900 uppercase tracking-wide">Projects</h2>
+                        <button id="addProjectBtn" class="text-slate-400 hover:text-slate-600">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                            </svg>
+                        </button>
+                    </div>
+                    
+                    <!-- Add Project Form (initially hidden) -->
+                    <div id="addProjectForm" class="hidden mb-4 p-3 bg-slate-50 rounded-lg">
+                        <input type="text" id="gitUrl" placeholder="Git repository URL" 
+                            class="w-full px-2 py-1.5 border border-slate-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 mb-2">
+                        <div class="flex gap-2">
+                            <button id="addProject" class="flex-1 px-2 py-1.5 bg-slate-900 text-white text-xs rounded hover:bg-slate-800">
+                                Add
+                            </button>
+                            <button id="cancelAdd" class="px-2 py-1.5 text-slate-600 text-xs hover:bg-slate-200 rounded">
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Projects List -->
+                    <div id="projectsList" class="space-y-1 mb-6">
+                        <div class="text-slate-500 text-xs">Loading projects...</div>
+                    </div>
+                </div>
+                
+                <!-- Agents Section -->
+                <div class="border-t border-slate-200 p-4">
+                    <div class="flex items-center justify-between mb-3">
+                        <h2 class="text-sm font-medium text-slate-900 uppercase tracking-wide">Agents</h2>
+                        <span id="selectedProjectBadge" class="hidden text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded"></span>
+                    </div>
+                    
+                    <!-- Create Agent Form -->
+                    <div id="createAgentForm" class="hidden mb-4 p-3 bg-slate-50 rounded-lg">
+                        <input type="text" id="agentGoal" placeholder="Describe what you want the agent to do..." 
+                            class="w-full px-2 py-1.5 border border-slate-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 mb-2">
+                        <button id="createAgent" class="w-full px-2 py-1.5 bg-slate-900 text-white text-xs rounded hover:bg-slate-800">
+                            Start Agent
+                        </button>
+                    </div>
+                    
+                    <!-- Agents List -->
+                    <div id="agentsList" class="space-y-1">
+                        <div class="text-slate-500 text-xs">Select a project to view agents</div>
+                    </div>
+                </div>
             </div>
         </div>
         
-        <!-- Agent Section -->
-        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
-            <h2 class="text-xl font-semibold mb-4">Agents</h2>
-            
-            <!-- Create Agent Form -->
-            <div id="createAgentForm" class="hidden mb-4">
-                <div class="mb-2">
-                    <label class="text-sm text-gray-600">Selected Project: <span id="selectedProject" class="font-semibold"></span></label>
-                </div>
-                <div class="flex gap-2">
-                    <input type="text" id="agentGoal" placeholder="Agent goal (min 10 chars)" 
-                        class="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <button id="createAgent" class="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500">
-                        Start Agent
-                    </button>
-                </div>
+        <!-- Main Content Area -->
+        <div class="flex-1 flex flex-col">
+            <!-- Main Content Header -->
+            <div class="p-4 border-b border-slate-200 bg-white">
+                <div id="mainTitle" class="text-sm font-medium text-slate-900">Welcome to Agent Sandbox</div>
+                <div id="mainSubtitle" class="text-xs text-slate-600 mt-1">Select a project or agent to get started</div>
             </div>
             
-            <!-- Agents Table -->
-            <div class="overflow-x-auto">
-                <table class="min-w-full">
-                    <thead>
-                        <tr class="border-b">
-                            <th class="text-left py-2">Status</th>
-                            <th class="text-left py-2">Goal</th>
-                            <th class="text-left py-2">Project</th>
-                            <th class="text-left py-2">Started</th>
-                            <th class="text-left py-2">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="agentsList">
-                        <tr><td colspan="5" class="text-gray-500 py-4">Select a project to view agents</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        
-        <!-- Diff Modal -->
-        <div id="diffModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
-            <div class="bg-white rounded-lg max-w-4xl w-full max-h-[80vh] overflow-hidden">
-                <div class="p-4 border-b flex justify-between items-center">
-                    <h3 class="text-lg font-semibold">Agent Diff</h3>
-                    <button onclick="closeDiffModal()" class="text-gray-500 hover:text-gray-700">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            <!-- Main Content Body -->
+            <div class="flex-1 bg-white overflow-y-auto">
+                <div id="mainContent" class="h-full flex items-center justify-center text-slate-400">
+                    <div class="text-center">
+                        <svg class="w-16 h-16 mx-auto mb-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                         </svg>
-                    </button>
-                </div>
-                <div class="p-4 overflow-y-auto max-h-[70vh]">
-                    <pre id="diffContent" class="text-sm font-mono whitespace-pre-wrap"></pre>
+                        <p class="text-sm">Select an agent to view details</p>
+                    </div>
                 </div>
             </div>
         </div>
-        
-        <!-- Logs Modal -->
-        <div id="logsModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
-            <div class="bg-white rounded-lg max-w-4xl w-full max-h-[80vh] overflow-hidden">
-                <div class="p-4 border-b flex justify-between items-center">
-                    <h3 class="text-lg font-semibold">Agent Logs</h3>
-                    <button onclick="closeLogsModal()" class="text-gray-500 hover:text-gray-700">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                        </svg>
-                    </button>
-                </div>
-                <div class="p-4 overflow-y-auto max-h-[70vh]">
-                    <div id="logsContent" class="text-sm space-y-1"></div>
-                </div>
-            </div>
-        </div>
+    </div>
+    
+    <!-- Toast Container -->
+    <div id="toastContainer"></div>
     </div>
     
     <script>
         const API_BASE = 'http://localhost:8000';
         let selectedProjectId = null;
         let refreshInterval = null;
+        
+        // Toast notification system
+        function showToast(message, type = 'info') {
+            const toast = $(`<div class="toast ${type}">${message}</div>`);
+            $('#toastContainer').append(toast);
+            
+            setTimeout(() => toast.addClass('show'), 100);
+            setTimeout(() => {
+                toast.removeClass('show');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
         
         // Check server health
         async function checkHealth() {
@@ -139,36 +187,45 @@
                 const projects = await response.json();
                 
                 const html = projects.map(project => `
-                    <div class="flex items-center justify-between p-3 border rounded-md hover:bg-gray-50">
-                        <div class="flex-1">
-                            <div class="font-semibold">${project.short_hash}</div>
-                            <div class="text-sm text-gray-600">${project.git_url}</div>
-                            <div class="text-xs text-gray-500">Branch: ${project.branch || 'unknown'} | Commit: ${project.latest_commit || 'unknown'}</div>
-                        </div>
-                        <div class="flex gap-2">
-                            <button onclick="selectProject('${project.short_hash}')" 
-                                class="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600">
-                                Select
-                            </button>
-                            <button onclick="pullProject('${project.short_hash}')" 
-                                class="px-3 py-1 text-sm bg-gray-500 text-white rounded hover:bg-gray-600">
-                                Pull
+                    <div class="group p-2 rounded hover:bg-slate-50 cursor-pointer border-l-2 border-transparent hover:border-slate-300 transition-all" 
+                         onclick="selectProject('${project.short_hash}')">
+                        <div class="flex items-center justify-between">
+                            <div class="flex-1 min-w-0">
+                                <div class="text-sm font-medium text-slate-900 truncate">${project.short_hash}</div>
+                                <div class="text-xs text-slate-500 truncate mt-0.5">${project.git_url.replace('https://github.com/', '')}</div>
+                            </div>
+                            <button onclick="pullProject('${project.short_hash}'); event.stopPropagation();" 
+                                class="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-slate-600 transition-opacity">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                </svg>
                             </button>
                         </div>
                     </div>
                 `).join('');
                 
-                $('#projectsList').html(html || '<div class="text-gray-500">No projects found</div>');
+                $('#projectsList').html(html || '<div class="text-slate-500 text-xs p-2">No projects found</div>');
             } catch (error) {
-                $('#projectsList').html('<div class="text-red-500">Error loading projects</div>');
+                $('#projectsList').html('<div class="text-red-600 text-xs p-2">Error loading projects</div>');
             }
         }
+        
+        // Project form toggle
+        $('#addProjectBtn').click(function() {
+            $('#addProjectForm').removeClass('hidden');
+            $('#gitUrl').focus();
+        });
+        
+        $('#cancelAdd').click(function() {
+            $('#addProjectForm').addClass('hidden');
+            $('#gitUrl').val('');
+        });
         
         // Add new project
         $('#addProject').click(async function() {
             const gitUrl = $('#gitUrl').val().trim();
             if (!gitUrl) {
-                alert('Please enter a Git URL');
+                showToast('Please enter a Git URL', 'error');
                 return;
             }
             
@@ -183,23 +240,46 @@
                 
                 if (response.ok) {
                     $('#gitUrl').val('');
+                    $('#addProjectForm').addClass('hidden');
                     await loadProjects();
+                    showToast('Project added successfully', 'success');
                 } else {
                     const error = await response.json();
-                    alert(`Error: ${error.detail}`);
+                    showToast(`Error: ${error.detail}`, 'error');
                 }
             } catch (error) {
-                alert(`Error: ${error.message}`);
+                showToast(`Error: ${error.message}`, 'error');
             } finally {
-                $(this).prop('disabled', false).text('Add Project');
+                $(this).prop('disabled', false).text('Add');
             }
         });
         
         // Select project
         window.selectProject = function(projectId) {
             selectedProjectId = projectId;
-            $('#selectedProject').text(projectId);
+            
+            // Update UI to show selected project
+            $('#selectedProjectBadge').removeClass('hidden').text(projectId);
             $('#createAgentForm').removeClass('hidden');
+            
+            // Update main content
+            $('#mainTitle').text(`Project: ${projectId}`);
+            $('#mainSubtitle').text('Select an agent to view details');
+            $('#mainContent').html(`
+                <div class="h-full flex items-center justify-center text-slate-400">
+                    <div class="text-center">
+                        <svg class="w-16 h-16 mx-auto mb-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+                        </svg>
+                        <p class="text-sm">Select an agent to view details</p>
+                    </div>
+                </div>
+            `);
+            
+            // Highlight selected project
+            $('#projectsList .border-slate-900').removeClass('border-slate-900').addClass('border-transparent');
+            $(`#projectsList div[onclick="selectProject('${projectId}')"]`).removeClass('border-transparent').addClass('border-slate-900');
+            
             loadAgents();
             
             // Start auto-refresh
@@ -209,22 +289,20 @@
         
         // Pull project
         window.pullProject = async function(projectId) {
-            if (!confirm('Pull latest changes for this project?')) return;
-            
             try {
                 const response = await fetch(`${API_BASE}/projects/${projectId}/pull`, {
                     method: 'POST'
                 });
                 
                 if (response.ok) {
-                    alert('Project updated successfully');
+                    showToast('Project updated successfully', 'success');
                     await loadProjects();
                 } else {
                     const error = await response.json();
-                    alert(`Error: ${error.detail}`);
+                    showToast(`Error: ${error.detail}`, 'error');
                 }
             } catch (error) {
-                alert(`Error: ${error.message}`);
+                showToast(`Error: ${error.message}`, 'error');
             }
         };
         
@@ -238,43 +316,108 @@
                 
                 const html = agents.map(agent => {
                     const displayStatus = agent.diff_status || agent.status;
-                    const statusColor = {
+                    const statusIcons = {
+                        'AGENT_RUNNING': '⏳',
+                        'AGENT_COMPLETE': '⚡',
+                        'DONE': '✅',
+                        'DONE_AND_NONE': '⭕',
+                        'ERROR': '❌'
+                    };
+                    
+                    const statusColors = {
                         'AGENT_RUNNING': 'text-yellow-600',
                         'AGENT_COMPLETE': 'text-blue-600',
                         'DONE': 'text-green-600',
-                        'DONE_AND_NONE': 'text-gray-600',
+                        'DONE_AND_NONE': 'text-slate-500',
                         'ERROR': 'text-red-600'
-                    }[displayStatus] || 'text-gray-600';
+                    };
+                    
+                    const statusColor = statusColors[displayStatus] || 'text-slate-500';
                     
                     return `
-                        <tr class="border-b">
-                            <td class="py-2 ${statusColor} font-semibold">${displayStatus}</td>
-                            <td class="py-2">${agent.goal.length > 50 ? agent.goal.substring(0, 50) + '...' : agent.goal}</td>
-                            <td class="py-2">${agent.project_id}</td>
-                            <td class="py-2">${new Date(agent.started_at).toLocaleString()}</td>
-                            <td class="py-2">
-                                <button onclick="viewDiff('${agent.name}')" 
-                                    class="text-blue-500 hover:underline mr-2">Diff</button>
-                                <button onclick="viewLogs('${agent.name}')" 
-                                    class="text-purple-500 hover:underline mr-2">Logs</button>
-                                <button onclick="restartAgent('${agent.name}')" 
-                                    class="text-green-500 hover:underline">Restart</button>
-                            </td>
-                        </tr>
+                        <div class="group p-2 rounded hover:bg-slate-50 cursor-pointer border-l-2 border-transparent hover:border-slate-300 transition-all" 
+                             onclick="selectAgent('${agent.name}')">
+                            <div class="flex items-start gap-2">
+                                <span class="${statusColor} text-xs mt-0.5">${statusIcons[displayStatus] || '⭕'}</span>
+                                <div class="flex-1 min-w-0">
+                                    <div class="text-xs font-medium text-slate-900 truncate">${agent.goal}</div>
+                                    <div class="text-xs text-slate-500 mt-0.5">${new Date(agent.started_at).toLocaleString()}</div>
+                                </div>
+                            </div>
+                            <div class="flex gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button onclick="viewDiff('${agent.name}'); event.stopPropagation();" 
+                                    class="px-2 py-1 text-xs text-slate-600 hover:bg-slate-200 rounded">Diff</button>
+                                <button onclick="viewLogs('${agent.name}'); event.stopPropagation();" 
+                                    class="px-2 py-1 text-xs text-slate-600 hover:bg-slate-200 rounded">Logs</button>
+                                <button onclick="restartAgent('${agent.name}'); event.stopPropagation();" 
+                                    class="px-2 py-1 text-xs text-slate-600 hover:bg-slate-200 rounded">Restart</button>
+                            </div>
+                        </div>
                     `;
                 }).join('');
                 
-                $('#agentsList').html(html || '<tr><td colspan="5" class="text-gray-500 py-4">No agents found</td></tr>');
+                $('#agentsList').html(html || '<div class="text-slate-500 text-xs p-2">No agents found</div>');
             } catch (error) {
-                $('#agentsList').html('<tr><td colspan="5" class="text-red-500 py-4">Error loading agents</td></tr>');
+                $('#agentsList').html('<div class="text-red-600 text-xs p-2">Error loading agents</div>');
             }
         }
+        
+        // Select agent
+        window.selectAgent = function(agentName) {
+            // Highlight selected agent
+            $('#agentsList .border-slate-900').removeClass('border-slate-900').addClass('border-transparent');
+            $(`#agentsList div[onclick="selectAgent('${agentName}')"]`).removeClass('border-transparent').addClass('border-slate-900');
+            
+            // Update main content with agent details
+            $('#mainTitle').text(`Agent: ${agentName}`);
+            $('#mainSubtitle').text('View diff or logs for this agent');
+            $('#mainContent').html(`
+                <div class="p-6">
+                    <div class="grid grid-cols-2 gap-4 h-full">
+                        <div class="border border-slate-200 rounded-lg p-4 hover:border-slate-300 cursor-pointer transition-colors" 
+                             onclick="viewDiff('${agentName}')">
+                            <div class="flex items-center gap-3 mb-3">
+                                <div class="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
+                                    <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h3 class="font-medium text-slate-900">View Diff</h3>
+                                    <p class="text-sm text-slate-600">See code changes made by this agent</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="border border-slate-200 rounded-lg p-4 hover:border-slate-300 cursor-pointer transition-colors" 
+                             onclick="viewLogs('${agentName}')">
+                            <div class="flex items-center gap-3 mb-3">
+                                <div class="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center">
+                                    <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h3 class="font-medium text-slate-900">View Logs</h3>
+                                    <p class="text-sm text-slate-600">See execution logs for this agent</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-6 flex gap-3 justify-center">
+                        <button onclick="restartAgent('${agentName}')" 
+                            class="px-4 py-2 bg-slate-900 text-white text-sm rounded-lg hover:bg-slate-800 transition-colors">
+                            Restart Agent
+                        </button>
+                    </div>
+                </div>
+            `);
+        };
         
         // Create agent
         $('#createAgent').click(async function() {
             const goal = $('#agentGoal').val().trim();
             if (goal.length < 10) {
-                alert('Goal must be at least 10 characters');
+                showToast('Goal must be at least 10 characters', 'error');
                 return;
             }
             
@@ -293,12 +436,13 @@
                 if (response.ok) {
                     $('#agentGoal').val('');
                     await loadAgents();
+                    showToast('Agent started successfully', 'success');
                 } else {
                     const error = await response.json();
-                    alert(`Error: ${error.detail}`);
+                    showToast(`Error: ${error.detail}`, 'error');
                 }
             } catch (error) {
-                alert(`Error: ${error.message}`);
+                showToast(`Error: ${error.message}`, 'error');
             } finally {
                 $(this).prop('disabled', false).text('Start Agent');
             }
@@ -310,19 +454,27 @@
                 const response = await fetch(`${API_BASE}/agents/${agentName}/diff`);
                 if (response.ok) {
                     const diff = await response.json();
-                    $('#diffContent').text(diff.content);
-                    $('#diffModal').removeClass('hidden');
+                    $('#mainTitle').text(`Diff - ${agentName}`);
+                    $('#mainSubtitle').text('Code changes made by this agent');
+                    $('#mainContent').html(`
+                        <div class="h-full flex flex-col">
+                            <div class="flex-1 p-4 overflow-y-auto">
+                                <pre class="font-mono text-xs bg-slate-50 p-4 rounded-lg whitespace-pre-wrap overflow-x-auto border">${diff.content}</pre>
+                            </div>
+                            <div class="border-t border-slate-200 p-4 bg-slate-50">
+                                <button onclick="selectAgent('${agentName}')" 
+                                    class="px-3 py-1.5 text-sm text-slate-600 hover:bg-white rounded border">
+                                    ← Back to Agent
+                                </button>
+                            </div>
+                        </div>
+                    `);
                 } else {
-                    alert('No diff available for this agent');
+                    showToast('No diff available for this agent', 'error');
                 }
             } catch (error) {
-                alert(`Error: ${error.message}`);
+                showToast(`Error: ${error.message}`, 'error');
             }
-        };
-        
-        // Close diff modal
-        window.closeDiffModal = function() {
-            $('#diffModal').addClass('hidden');
         };
         
         // View logs
@@ -334,40 +486,49 @@
                     const html = logs.map(log => {
                         const timestamp = new Date(log.timestamp).toLocaleString();
                         const level = log.level || 'INFO';
-                        const levelColor = {
+                        const levelColors = {
                             'INFO': 'text-blue-600',
-                            'ERROR': 'text-red-600',
-                            'WARN': 'text-yellow-600',
-                            'DEBUG': 'text-gray-600'
-                        }[level] || 'text-gray-600';
+                            'ERROR': 'text-red-600', 
+                            'WARN': 'text-orange-600',
+                            'DEBUG': 'text-slate-500'
+                        };
+                        const levelColor = levelColors[level] || 'text-slate-600';
                         
-                        return `<div class="border-b pb-1 mb-1">
-                            <span class="text-gray-500">[${timestamp}]</span>
-                            <span class="${levelColor} font-semibold">${level}</span>
-                            ${log.tool_name ? `<span class="text-purple-600">[${log.tool_name}]</span>` : ''}
-                            <span class="ml-2">${log.message}</span>
+                        return `<div class="border-b border-slate-200 pb-3 mb-3 last:border-b-0">
+                            <div class="flex items-center gap-2 text-xs text-slate-500 mb-2">
+                                <span>[${timestamp}]</span>
+                                <span class="${levelColor} font-medium">${level}</span>
+                                ${log.tool_name ? `<span class="bg-slate-100 px-2 py-0.5 rounded text-slate-700">${log.tool_name}</span>` : ''}
+                            </div>
+                            <div class="text-sm text-slate-700 font-mono bg-slate-50 p-2 rounded">${log.message}</div>
                         </div>`;
                     }).join('');
                     
-                    $('#logsContent').html(html || '<div class="text-gray-500">No logs found</div>');
-                    $('#logsModal').removeClass('hidden');
+                    $('#mainTitle').text(`Logs - ${agentName}`);
+                    $('#mainSubtitle').text('Execution logs for this agent');
+                    $('#mainContent').html(`
+                        <div class="h-full flex flex-col">
+                            <div class="flex-1 p-4 overflow-y-auto">
+                                ${html || '<div class="text-slate-500 text-center py-8">No logs found</div>'}
+                            </div>
+                            <div class="border-t border-slate-200 p-4 bg-slate-50">
+                                <button onclick="selectAgent('${agentName}')" 
+                                    class="px-3 py-1.5 text-sm text-slate-600 hover:bg-white rounded border">
+                                    ← Back to Agent
+                                </button>
+                            </div>
+                        </div>
+                    `);
                 } else {
-                    alert('No logs available for this agent');
+                    showToast('No logs available for this agent', 'error');
                 }
             } catch (error) {
-                alert(`Error: ${error.message}`);
+                showToast(`Error: ${error.message}`, 'error');
             }
-        };
-        
-        // Close logs modal
-        window.closeLogsModal = function() {
-            $('#logsModal').addClass('hidden');
         };
         
         // Restart agent
         window.restartAgent = async function(agentName) {
-            if (!confirm('Restart this agent?')) return;
-            
             try {
                 const response = await fetch(`${API_BASE}/agents/${agentName}/restart`, {
                     method: 'POST'
@@ -375,12 +536,13 @@
                 
                 if (response.ok) {
                     await loadAgents();
+                    showToast('Agent restarted successfully', 'success');
                 } else {
                     const error = await response.json();
-                    alert(`Error: ${error.detail}`);
+                    showToast(`Error: ${error.detail}`, 'error');
                 }
             } catch (error) {
-                alert(`Error: ${error.message}`);
+                showToast(`Error: ${error.message}`, 'error');
             }
         };
         
@@ -388,7 +550,7 @@
         $(document).ready(async function() {
             const healthy = await checkHealth();
             if (!healthy) {
-                alert('Server is not available. Please start the server first.');
+                showToast('Server is not available. Please start the server first.', 'error');
                 return;
             }
             
