@@ -1,167 +1,131 @@
-# Agent Sandbox (AGS)
+# Agent Sandbox
 
-Run Claude Code AI agents in isolated Docker containers with network restrictions and git worktree isolation.
+A minimal CLI tool that provides an isolated Docker environment for safe experimentation.
 
-## What It Does
+## Features
 
-AGS creates secure, isolated environments for Claude Code agents with:
-- **Client-Server Architecture**: FastAPI server manages agents, web interface as client
-- **Web Interface**: Modern browser-based interface with real-time monitoring
-- **Project Management**: Work with any Git repository by URL
-- **Git worktrees**: Isolated workspaces with dedicated branches
-- **Docker containers**: Sandboxed execution with network whitelisting
-- **Diff viewer**: Built-in syntax-highlighted code review
-- **Agent restart**: Re-run agents with the same goals
+- **Isolated Environment**: Each sandbox runs in its own Docker container with dedicated network
+- **Copy-on-Write Workspace**: Creates a temporary copy of your current directory  
+- **Interactive Shell**: Bash shell with development tools and Claude Code pre-installed
+- **Automatic Diff Generation**: Generates a patch file of all changes when you exit
+- **Network Isolation**: Each sandbox gets its own network and proxy container
+- **Hook Support**: Mounts validation hooks for Claude Code if used
 
-## Quick Start
-
-### Prerequisites
-- Python 3.9+
-- Docker running
-- Git repository
-- Claude Code subscription
-
-### Installation
+## Installation
 
 ```bash
-# Clone and setup
-git clone https://github.com/anthropics/agent-sandbox.git
-cd agent-sandbox
-
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate
+# Install dependencies
 pip install -r requirements.txt
 
-# Optional: Add to PATH
-export PATH="$(pwd)/bin:$PATH"
+# Make the binary executable
+chmod +x bin/agent-sandbox
+
+# Add to your PATH (optional)
+export PATH=$PATH:/path/to/agent-sandbox/bin
 ```
 
 ## Usage
 
-```bash
-# Start the server (in one terminal)
-ags-server
-
-# Start the web interface (in another terminal)
-ags-web
-
-# Open your browser to http://localhost:8080
-# 1. Add Git repositories by entering their URLs
-# 2. Select a project to work with
-# 3. Create agents by entering goals
-# 4. Monitor agent progress in real-time
-# 5. View diffs and restart agents as needed
-
-# The first run will require Claude auth to set up your credentials volume:
-docker run -it --rm -v claude-code-credentials:/home/node/.claude claude-code-agent claude
-```
-
-## How It Works
-
-1. **Creates Git Worktree**: Isolated workspace at `~/.ags/worktrees/<name>`
-2. **Builds Docker Images**: Agent container + proxy container
-3. **Configures Security**: Sets up hooks and network restrictions
-4. **Runs Claude Code**: Executes with your goal, streams output
-5. **Stores Diffs**: Records changes in database for review and application
-
-## Architecture
-
-```
-┌───────────┐     ┌──────────────┐
-│    Web    │────▶│   FastAPI    │
-│ Interface │     │   Server     │
-└───────────┘     └──────┬───────┘
-                         │
-                         ├────▶ ┌─────────────────┐     ┌──────────────────┐
-                         │      │  Agent Container│────▶│  Proxy Container │
-                         │      │  (Claude Code)  │     │   (Tinyproxy)    │
-                         │      └─────────────────┘     └──────────────────┘
-                         │                                        │
-                         ├────▶ ┌─────────────────┐     ┌──────────────────┐
-                         │      │  Agent Container│────▶│  Proxy Container │
-                         │      │  (Claude Code)  │     │   (Tinyproxy)    │
-                         │      └─────────────────┘     └──────────────────┘
-                         │                                        │
-                         ├────▶ ┌─────────────────┐     ┌──────────────────┐
-                         │      │  Agent Container│────▶│  Proxy Container │
-                         │      │  (Claude Code)  │     │   (Tinyproxy)    │
-                         │      └─────────────────┘     └──────────────────┘
-                         │                │                        │
-                         ▼                ▼                        ▼
-                     Database        Git Worktrees            Internet
-                   (~/.ags/agents.db)  (~/.ags/worktrees/<name>)  (Whitelisted)
-                         │
-                         ▼
-                    Git Clones
-                (~/.ags/projects/project-<hash>)
-```
-
-## Security Features
-
-- **File System Isolation**: Agents run against a worktree copy of your project
-- **No Host Access**: Agents run in isolated containers
-- **Network Isolation**: No network access except for our proxy
-- **Domain Whitelisting**: The proxy only allows access to pre-approved domains (GitHub, Anthropic API, etc.)
-
-## Configuration
-
-### Whitelisted Domains
-Edit [`tinyproxy-whitelist`](tinyproxy-whitelist) to add domains.
-
-### Hooks
-Hooks in `hooks/`:
-- [`pre-any`](hooks/pre-any): Logs all tool usage
-- [`pre-bash`](hooks/pre-bash): Bash command hooks
-- [`pre-writes`](hooks/pre-writes): File modification hooks
-- [`post-writes`](hooks/post-writes): After file changes
-- [`post-stop`](hooks/post-stop): Cleanup actions
-
-## Troubleshooting
+### Basic Usage
 
 ```bash
-# View agent logs
-docker logs <agent-name>
+# Launch an interactive sandbox
+agent-sandbox
 
-# Access container
-docker exec -it <agent-name> /bin/bash
-
-# Check proxy logs
-docker logs proxy-<agent-name>
-
-# Force cleanup
-ags cleanup
+# The tool will:
+# 1. Build Docker images (if needed)
+# 2. Create a temporary copy of your current directory
+# 3. Start a proxy container for network isolation
+# 4. Launch an interactive bash shell in the container
+# 5. Generate a diff file when you exit
 ```
 
-## Project Structure
 
+## What's Included
+
+The sandbox container includes:
+- Node.js 20 with Claude Code CLI pre-installed
+- Git, GitHub CLI (gh)
+- Development tools: vim, fzf, jq, curl, wget
+- Go programming language
+- sudo access for the node user
+
+## Example
+
+```bash
+$ agent-sandbox
+→ Building Docker images...
+  ✓ Agent image built
+  ✓ Proxy image built
+→ Creating workspace copy at /tmp/agent-sandbox-20240108-143022-abc123/workspace
+→ Created Claude settings with hooks
+→ Creating Docker network: agent-network-sandbox-20240108-143022
+→ Starting proxy container: proxy-sandbox-20240108-143022
+→ Starting interactive shell...
+
+node@container:/workspace$ # You're now in the sandbox!
+node@container:/workspace$ npm install express
+node@container:/workspace$ echo "console.log('test')" > test.js
+node@container:/workspace$ exit
+
+→ Generating diff...
+  ✓ Diff saved to: sandbox-diff-sandbox-20240108-143022.patch
+
+→ Starting cleanup...
+→ Stopping proxy container: proxy-sandbox-20240108-143022
+  ✓ Proxy container stopped
+→ Removing network: agent-network-sandbox-20240108-143022
+  ✓ Network removed
+→ Removing temporary workspace: /tmp/agent-sandbox-20240108-143022-abc123
+  ✓ Temporary workspace removed
+
+✓ Cleanup completed
 ```
-agent-process/
-├── src/                   # Modular Python source
-│   ├── main.py            # CLI interface
-│   ├── server.py          # FastAPI server
-│   ├── api_client.py      # HTTP client for TUI
-│   ├── agent.py           # Agent orchestration
-│   ├── workspace.py       # Git/Docker management
-│   ├── diff.py            # Diff operations
-│   ├── log.py             # Log formatting
-│   └── *_db.py            # Database modules
-├── web/                   # Web interface
-│   └── index.html         # Single-page web application
-├── requirements.txt       # Dependencies (click, docker, rich, fastapi, uvicorn, requests)
-├── bin/
-│   ├── ags-server         # Server startup script
-│   ├── ags-web            # Web interface server
-│   └── ags-test           # Test script
-├── hooks/                 # Validation scripts
-├── certs/                 # SSL certificates
-├── Dockerfile.agent       # Claude Code container
-├── Dockerfile.proxy       # Proxy container
-├── tinyproxy-whitelist    # Allowed domains
-└── example/               # Sample project
+
+## Network Isolation
+
+Each sandbox runs with:
+- **Dedicated Docker network**: Isolated from other sandboxes and the host
+- **Unique proxy container**: Each sandbox gets its own proxy instance
+- **Whitelisted domains only**: By default, only these domains are accessible:
+  - api.anthropic.com
+  - docs.anthropic.com
+  - github.com
+  - githubusercontent.com
+  - sentry.io
+
+## Hooks
+
+The sandbox automatically mounts hooks from the `hooks/` directory to control Claude Code behavior:
+- `pre-any`: Logs all tool usage
+- `pre-bash`: Validates bash commands before execution
+- `pre-writes`: Validates file modifications
+- `post-writes`: Actions after file changes
+- `post-stop`: Cleanup actions
+
+## Applying Changes
+
+To apply the changes from a sandbox session to your actual project:
+
+```bash
+# Review the diff first
+cat sandbox-diff-*.patch
+
+# Apply the patch
+git apply sandbox-diff-*.patch
 ```
 
-## License
+## Docker Images
 
-This is a reference implementation on how to implement an agent sandbox.
-It is not licensed under any open source license.
+The tool uses two Docker images:
+
+1. **claude-code-agent**: The main container with development tools
+2. **claude-code-proxy**: Tinyproxy for network isolation
+
+These are built automatically on first run or can be rebuilt with `--rebuild`.
+
+## Requirements
+
+- Python 3.8+
+- Docker
+- Git

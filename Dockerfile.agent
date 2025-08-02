@@ -67,7 +67,10 @@ ENV PATH=$PATH:/usr/local/share/npm-global/bin
 # Install Claude Code CLI
 RUN npm install -g @anthropic-ai/claude-code
 
+# Add Context7 MCP
+RUN claude mcp add context7 -- npx -y @upstash/context7-mcp@latest
+
 WORKDIR /workspace
 
-# Start Claude Code directly with goal from environment
-CMD ["sh", "-c", "claude -p \"$CLAUDE_GOAL\" --dangerously-skip-permissions"]
+# Default to bash shell for interactive use
+CMD ["/bin/bash"]
