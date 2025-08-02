@@ -13,10 +13,10 @@ from .log_db import LogDatabase
 class AgentLogFormatter:
     """Formats agent logs with rich styling."""
     
-    def __init__(self, console: Console, db: Optional[LogDatabase] = None, request_id: Optional[int] = None):
+    def __init__(self, console: Console, db: Optional[LogDatabase] = None, agent_name: Optional[str] = None):
         self.console = console
         self.db = db
-        self.request_id = request_id
+        self.agent_name = agent_name
         
         self.tool_colors = {
             'Read': 'blue',
@@ -57,10 +57,10 @@ class AgentLogFormatter:
             log_data = json.loads(line.strip())
             self._format_json_log(log_data)
             
-            if self.db and self.request_id:
+            if self.db and self.agent_name:
                 if 'tool_name' in log_data:
                     self.db.log_tool_event(
-                        request_id=self.request_id,
+                        agent_name=self.agent_name,
                         tool_name=log_data.get('tool_name', 'unknown'),
                         hook_event=log_data.get('hook_event_name', 'unknown'),
                         tool_input=log_data.get('tool_input', {}),
@@ -69,7 +69,7 @@ class AgentLogFormatter:
                     )
                 else:
                     self.db.log_message(
-                        request_id=self.request_id,
+                        agent_name=self.agent_name,
                         message=str(log_data),
                         level='INFO',
                         raw_log=line
@@ -80,9 +80,9 @@ class AgentLogFormatter:
             
         self.console.print(line)
         
-        if self.db and self.request_id:
+        if self.db and self.agent_name:
             self.db.log_message(
-                request_id=self.request_id,
+                agent_name=self.agent_name,
                 message=line,
                 level='INFO',
                 raw_log=line
@@ -175,17 +175,21 @@ class AgentLogFormatter:
 class LogManager:
     """Manages log operations without exposing database internals."""
     
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str = None):
         self._db = LogDatabase(db_path)
         self.console = Console()
     
-    def get_agent_logs(self, agent_id: str) -> List[Dict[str, Any]]:
-        """Get all logs for an agent."""
-        return self._db.get_agent_logs(agent_id)
+    def log_message(self, agent_name: str, level: str, message: str, tool_name: str = None, tool_type: str = None):
+        """Log a message for an agent by name."""
+        self._db.log_message(agent_name, message, level, tool_name, tool_type)
     
-    def display_agent_logs(self, agent_id: str, formatter: AgentLogFormatter):
+    def get_agent_logs(self, agent_name: str) -> List[Dict[str, Any]]:
+        """Get all logs for an agent."""
+        return self._db.get_logs_by_agent_name(agent_name)
+    
+    def display_agent_logs(self, agent_name: str, formatter: AgentLogFormatter):
         """Display agent logs using the formatter."""
-        logs = self.get_agent_logs(agent_id)
+        logs = self.get_agent_logs(agent_name)
         if not logs:
             self.console.print("[dim]No logs found[/dim]")
             return

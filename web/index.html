@@ -98,6 +98,23 @@
                 </div>
             </div>
         </div>
+        
+        <!-- Logs Modal -->
+        <div id="logsModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+            <div class="bg-white rounded-lg max-w-4xl w-full max-h-[80vh] overflow-hidden">
+                <div class="p-4 border-b flex justify-between items-center">
+                    <h3 class="text-lg font-semibold">Agent Logs</h3>
+                    <button onclick="closeLogsModal()" class="text-gray-500 hover:text-gray-700">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+                <div class="p-4 overflow-y-auto max-h-[70vh]">
+                    <div id="logsContent" class="text-sm space-y-1"></div>
+                </div>
+            </div>
+        </div>
     </div>
     
     <script>
@@ -220,23 +237,26 @@
                 const agents = await response.json();
                 
                 const html = agents.map(agent => {
+                    const displayStatus = agent.diff_status || agent.status;
                     const statusColor = {
                         'AGENT_RUNNING': 'text-yellow-600',
                         'AGENT_COMPLETE': 'text-blue-600',
                         'DONE': 'text-green-600',
                         'DONE_AND_NONE': 'text-gray-600',
                         'ERROR': 'text-red-600'
-                    }[agent.status] || 'text-gray-600';
+                    }[displayStatus] || 'text-gray-600';
                     
                     return `
                         <tr class="border-b">
-                            <td class="py-2 ${statusColor} font-semibold">${agent.diff_status || agent.status}</td>
+                            <td class="py-2 ${statusColor} font-semibold">${displayStatus}</td>
                             <td class="py-2">${agent.goal.length > 50 ? agent.goal.substring(0, 50) + '...' : agent.goal}</td>
                             <td class="py-2">${agent.project_id}</td>
                             <td class="py-2">${new Date(agent.started_at).toLocaleString()}</td>
                             <td class="py-2">
                                 <button onclick="viewDiff('${agent.name}')" 
                                     class="text-blue-500 hover:underline mr-2">Diff</button>
+                                <button onclick="viewLogs('${agent.name}')" 
+                                    class="text-purple-500 hover:underline mr-2">Logs</button>
                                 <button onclick="restartAgent('${agent.name}')" 
                                     class="text-green-500 hover:underline">Restart</button>
                             </td>
@@ -303,6 +323,45 @@
         // Close diff modal
         window.closeDiffModal = function() {
             $('#diffModal').addClass('hidden');
+        };
+        
+        // View logs
+        window.viewLogs = async function(agentName) {
+            try {
+                const response = await fetch(`${API_BASE}/agents/${agentName}/logs`);
+                if (response.ok) {
+                    const logs = await response.json();
+                    const html = logs.map(log => {
+                        const timestamp = new Date(log.timestamp).toLocaleString();
+                        const level = log.level || 'INFO';
+                        const levelColor = {
+                            'INFO': 'text-blue-600',
+                            'ERROR': 'text-red-600',
+                            'WARN': 'text-yellow-600',
+                            'DEBUG': 'text-gray-600'
+                        }[level] || 'text-gray-600';
+                        
+                        return `<div class="border-b pb-1 mb-1">
+                            <span class="text-gray-500">[${timestamp}]</span>
+                            <span class="${levelColor} font-semibold">${level}</span>
+                            ${log.tool_name ? `<span class="text-purple-600">[${log.tool_name}]</span>` : ''}
+                            <span class="ml-2">${log.message}</span>
+                        </div>`;
+                    }).join('');
+                    
+                    $('#logsContent').html(html || '<div class="text-gray-500">No logs found</div>');
+                    $('#logsModal').removeClass('hidden');
+                } else {
+                    alert('No logs available for this agent');
+                }
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        };
+        
+        // Close logs modal
+        window.closeLogsModal = function() {
+            $('#logsModal').addClass('hidden');
         };
         
         // Restart agent

@@ -20,62 +20,52 @@ class DiffDatabase(Database):
     def _init_database(self):
         """Initialize diff-related database schema."""
         self.execute("""
-            CREATE TABLE IF NOT EXISTS requests (
+            CREATE TABLE IF NOT EXISTS diffs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 agent_name TEXT NOT NULL UNIQUE,
-                project TEXT NOT NULL,
-                goal TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                started_at TIMESTAMP,
-                completed_at TIMESTAMP,
-                diff_status TEXT DEFAULT 'AGENT_RUNNING',
-                diff_content TEXT,
-                exit_code INTEGER,
-                error_message TEXT
+                content TEXT,
+                status TEXT DEFAULT 'PENDING',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
         
-        self.execute("CREATE INDEX IF NOT EXISTS idx_requests_agent_name ON requests(agent_name)")
+        self.execute("CREATE INDEX IF NOT EXISTS idx_diffs_agent_name ON diffs(agent_name)")
     
-    def update_request_status(self, agent_id: str, diff_status: DiffStatus, 
+    def update_agent_status(self, agent_name: str, diff_status: DiffStatus, 
                             exit_code: Optional[int] = None, 
                             error_message: Optional[str] = None):
-        """Update the status of an agent request."""
-        update_fields = ["diff_status = ?"]
-        params = [diff_status.value]
+        """Update the status of an agent."""
+        from .agent_db import AgentDatabase
+        agent_db = AgentDatabase()
         
+        # Update agent status
         if diff_status == DiffStatus.AGENT_COMPLETE:
-            update_fields.append("completed_at = CURRENT_TIMESTAMP")
+            agent_db.update_agent_ended(agent_name)
         
-        if exit_code is not None:
-            update_fields.append("exit_code = ?")
-            params.append(exit_code)
+        agent_db.update_agent_diff_status(agent_name, diff_status.value)
         
-        if error_message is not None:
-            update_fields.append("error_message = ?")
-            params.append(error_message)
-        
-        params.append(agent_id)
-        
-        self.execute(f"""
-            UPDATE requests 
-            SET {', '.join(update_fields)}
-            WHERE agent_name = ?
-        """, tuple(params))
+        if error_message:
+            agent_db.update_agent_status(agent_name, "ERROR", error_message)
     
-    def save_diff(self, agent_id: str, diff_content: str):
+    def save_diff(self, agent_name: str, diff_content: str):
         """Save the diff content and update status to DONE or DONE_AND_NONE."""
         # Choose status based on whether diff has content
         status = DiffStatus.DONE_AND_NONE if not diff_content.strip() else DiffStatus.DONE
+        
+        # Insert or replace diff record
         self.execute("""
-            UPDATE requests 
-            SET diff_content = ?, diff_status = ?
-            WHERE agent_name = ?
-        """, (diff_content, status.value, agent_id))
+            INSERT OR REPLACE INTO diffs (agent_name, content, status)
+            VALUES (?, ?, ?)
+        """, (agent_name, diff_content, status.value))
+        
+        # Update agent diff status
+        from .agent_db import AgentDatabase
+        agent_db = AgentDatabase()
+        agent_db.update_agent_diff_status(agent_name, status.value)
     
     
-    def get_diff_by_agent_name(self, agent_id: str) -> Optional[Dict[str, Any]]:
-        """Get a specific diff by agent ID."""
+    def get_diff_by_agent_name(self, agent_name: str) -> Optional[Dict[str, Any]]:
+        """Get a specific diff by agent name."""
         return self.fetch_one("""
-            SELECT * FROM requests WHERE agent_name = ? AND (diff_status = 'DONE' OR diff_status = 'DONE_AND_NONE')
-        """, (agent_id,))
+            SELECT * FROM diffs WHERE agent_name = ? AND (status = 'DONE' OR status = 'DONE_AND_NONE')
+        """, (agent_name,))

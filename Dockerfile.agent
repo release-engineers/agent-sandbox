@@ -70,4 +70,4 @@ RUN npm install -g @anthropic-ai/claude-code
 WORKDIR /workspace
 
 # Start Claude Code directly with goal from environment
-CMD ["claude", "-p", "$CLAUDE_GOAL", "--dangerously-skip-permissions"]
+CMD ["sh", "-c", "claude -p \"$CLAUDE_GOAL\" --dangerously-skip-permissions"]

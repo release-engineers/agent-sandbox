@@ -20,28 +20,27 @@ class DiffManager:
     def generate_diff(self, agent_id: str, workspace_path: Path) -> bool:
         """Generate a diff of agent changes."""
         try:
-            result = self._run_command(["git", "-C", str(workspace_path), "diff"])
+            # Stage all changes first (including untracked files), then get the diff
+            self._run_command(["git", "-C", str(workspace_path), "add", "."])
+            result = self._run_command(["git", "-C", str(workspace_path), "diff", "--cached"])
             
             if result.stdout.strip():
                 self._db.save_diff(agent_id, result.stdout)
-                self.console.print("📄 Diff generated and saved to database")
                 return True
             else:
-                self.console.print("[dim]No changes detected[/dim]")
                 self._db.save_diff(agent_id, "")
                 return True
                 
         except Exception as e:
-            self.console.print(f"⚠️ Failed to generate diff: {e}")
-            self._db.update_request_status(agent_id, DiffStatus.DONE, 
+            self._db.update_agent_status(agent_id, DiffStatus.DONE, 
                                         error_message=f"Failed to generate diff: {e}")
             return False
     
-    def update_agent_status(self, agent_id: str, status: DiffStatus, 
+    def update_agent_status(self, agent_name: str, status: DiffStatus, 
                           exit_code: Optional[int] = None, 
                           error_message: Optional[str] = None):
         """Update agent status."""
-        self._db.update_request_status(agent_id, status, exit_code, error_message)
+        self._db.update_agent_status(agent_name, status, exit_code, error_message)
     
     
     def get_diff_by_agent_name(self, agent_id: str) -> Optional[Dict[str, Any]]:
@@ -55,13 +54,13 @@ class DiffManager:
             self.console.print(f"[red]No diff found for agent '{agent_id}'[/red]")
             return False
         
-        if not diff_record['diff_content']:
+        if not diff_record['content']:
             self.console.print(f"[red]No diff content available for agent '{agent_id}'[/red]")
             return False
         
         try:
             with tempfile.NamedTemporaryFile(mode='w', suffix='.diff', delete=False) as temp_file:
-                temp_file.write(diff_record['diff_content'])
+                temp_file.write(diff_record['content'])
                 temp_file_path = temp_file.name
             
             try:

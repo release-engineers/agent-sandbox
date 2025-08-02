@@ -10,7 +10,10 @@ from typing import Optional
 class Database:
     """Base database class for SQLite operations."""
     
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str = None):
+        if db_path is None:
+            db_path = str(Path.home() / ".ags" / "agents.db")
+            Path(db_path).parent.mkdir(exist_ok=True)
         self.db_path = Path(db_path)
         self._lock = threading.Lock()
         self._init_database()

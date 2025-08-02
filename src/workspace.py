@@ -9,7 +9,6 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
 
 import docker
 
@@ -17,8 +16,9 @@ import docker
 class WorkspaceManager:
     """Manages git worktrees and Docker containers for agent execution."""
     
-    def __init__(self, project_path: Optional[Path] = None):
+    def __init__(self, project_path: Optional[Path] = None, log_manager=None):
         self.console = Console()
+        self.log_manager = log_manager
         try:
             self.docker = docker.from_env()
         except Exception as e:
@@ -29,6 +29,11 @@ class WorkspaceManager:
         self.git_root = self._get_git_root()
         self.worktree_dir = Path.home() / ".ags" / "worktrees"
         self.worktree_dir.mkdir(parents=True, exist_ok=True)
+    
+    def _log_message(self, agent_name: str, message: str):
+        """Log a message for the agent."""
+        if self.log_manager:
+            self.log_manager.log_message(agent_name, "INFO", message, tool_name="WORKSPACE", tool_type="AGS")
     
     def _get_git_root(self) -> Path:
         """Get git repository root."""
@@ -48,7 +53,6 @@ class WorkspaceManager:
         for container_name in [agent_id, f"proxy-{agent_id}"]:
             try:
                 container = self.docker.containers.get(container_name)
-                self.console.print(f"⏹ Stopping existing container: {container_name}")
                 container.stop()
                 container.remove()
             except docker.errors.NotFound:
@@ -56,20 +60,17 @@ class WorkspaceManager:
         
         workspace_path = self.worktree_dir / agent_id
         if workspace_path.exists():
-            self.console.print(f"🗑 Removing existing workspace: {workspace_path}")
             shutil.rmtree(workspace_path)
     
     def create_workspace(self, agent_id: str) -> Path:
         """Create workspace directory and clone repo."""
         workspace_path = self.worktree_dir / agent_id
         
-        with self.console.status("[cyan]Creating workspace...[/cyan]", spinner="dots") as status:
-            result = self._run_command([
-                "git", "clone", str(self.git_root), str(workspace_path)
-            ])
-            if result.returncode != 0:
-                raise Exception(f"Failed to clone repo: {result.stderr}")
-            status.update("[green]✓ Workspace created[/green]")
+        result = self._run_command([
+            "git", "clone", str(self.git_root), str(workspace_path)
+        ])
+        if result.returncode != 0:
+            raise Exception(f"Failed to clone repo: {result.stderr}")
         
         return workspace_path
     
@@ -101,28 +102,17 @@ class WorkspaceManager:
         """Build Docker images with progress display."""
         agent_process_dir = Path(__file__).parent.parent
         
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-            console=self.console
-        ) as progress:
-            build_task = progress.add_task("[cyan]Building Docker images...[/cyan]", total=2)
-            
-            self.docker.images.build(
-                path=str(agent_process_dir),
-                dockerfile="Dockerfile.agent",
-                tag="claude-code-agent"
-            )
-            progress.update(build_task, advance=1, description="[green]✓ Agent image built[/green]")
-            
-            self.docker.images.build(
-                path=str(agent_process_dir),
-                dockerfile="Dockerfile.proxy",
-                tag="claude-code-proxy"
-            )
-            progress.update(build_task, advance=1, description="[green]✓ All images built[/green]")
+        self.docker.images.build(
+            path=str(agent_process_dir),
+            dockerfile="Dockerfile.agent",
+            tag="claude-code-agent"
+        )
+        
+        self.docker.images.build(
+            path=str(agent_process_dir),
+            dockerfile="Dockerfile.proxy",
+            tag="claude-code-proxy"
+        )
     
     def ensure_network(self):
         """Create agent network if it doesn't exist."""
@@ -133,19 +123,18 @@ class WorkspaceManager:
     
     def start_proxy_container(self, agent_id: str):
         """Start proxy container."""
-        with self.console.status("[cyan]Starting proxy container...[/cyan]", spinner="dots"):
-            self.docker.containers.run(
-                "claude-code-proxy",
-                name=f"proxy-{agent_id}",
-                network="agent-network",
-                detach=True,
-                auto_remove=True
-            )
-            self.console.print("[green]✓ Proxy container started[/green]")
+        self.docker.containers.run(
+            "claude-code-proxy",
+            name=f"proxy-{agent_id}",
+            network="agent-network",
+            detach=True,
+            auto_remove=True
+        )
+        self._log_message(agent_id, "Proxy container started")
     
-    def run_agent_container(self, agent_id: str, goal: str, workspace_path: Path, log_formatter) -> int:
+    def run_agent_container(self, agent_id: str, goal: str, workspace_path: Path) -> int:
         """Run agent container and return exit code."""
-        self.console.print("🤖 Starting agent container...")
+        self._log_message(agent_id, "Starting agent container...")
         
         temp_log_dir = None
         try:
@@ -153,7 +142,7 @@ class WorkspaceManager:
             log_dir = Path(temp_log_dir)
             log_file = log_dir / "ags.log"
             log_file.touch()
-            self.console.print(f"[dim]Log directory: {log_dir}[/dim]")
+            self._log_message(agent_id, f"Log directory: {log_dir}")
             
             container = self.docker.containers.create(
                 "claude-code-agent",
@@ -180,13 +169,13 @@ class WorkspaceManager:
             import time
             
             def tail_log_file():
-                """Tail the log file and print new lines."""
+                """Tail the log file and store new lines."""
                 with open(log_file, 'r') as f:
                     f.seek(0, 2)
                     while container.status in ['running', 'created']:
                         line = f.readline()
                         if line:
-                            log_formatter.format_log_line(line.rstrip())
+                            self._log_message(agent_id, line.rstrip())
                         else:
                             time.sleep(0.1)
             
@@ -197,14 +186,14 @@ class WorkspaceManager:
             for line in container.logs(stream=True, follow=True):
                 decoded_line = line.decode('utf-8', errors='ignore').rstrip()
                 if decoded_line:
-                    log_formatter.format_log_line(decoded_line)
+                    self._log_message(agent_id, decoded_line)
             
             result = container.wait()
             return result['StatusCode']
             
         finally:
             if temp_log_dir and Path(temp_log_dir).exists():
-                self.console.print(f"[dim]Cleaning up temporary log directory...[/dim]")
+                self._log_message(agent_id, "Cleaning up temporary log directory...")
                 shutil.rmtree(temp_log_dir)
     
     def stop_containers(self, agent_id: str):
@@ -213,7 +202,6 @@ class WorkspaceManager:
             try:
                 container = self.docker.containers.get(container_name)
                 container.stop()
-                self.console.print(f"[green]✓ Stopped {container_name}[/green]")
             except docker.errors.NotFound:
                 pass
     
@@ -221,32 +209,24 @@ class WorkspaceManager:
         """Remove workspace directory."""
         workspace_path = self.worktree_dir / agent_id
         if workspace_path.exists():
-            self.console.print(f"🗑 Removing workspace: {workspace_path}")
             shutil.rmtree(workspace_path)
     
     def cleanup_all(self):
         """Clean up all agents and resources."""
-        self.console.print("🧽 Cleaning up all agents...")
-        
         for container in self.docker.containers.list(all=True):
             if container.attrs["Config"]["Image"] in ["claude-code-agent", "claude-code-proxy"]:
-                self.console.print(f"🗑 Removing container: {container.name}")
                 container.stop()
                 container.remove()
         
         try:
             network = self.docker.networks.get("agent-network")
             network.remove()
-            self.console.print("[green]✓ Removed agent network[/green]")
         except docker.errors.NotFound:
             pass
         
         if self.worktree_dir.exists():
-            self.console.print(f"🗑 Removing all workspaces: {self.worktree_dir}")
             shutil.rmtree(self.worktree_dir)
             self.worktree_dir.mkdir(exist_ok=True)
-        
-        self.console.print("✅ Cleanup completed")
     
     def run_auth_container(self):
         """Run Claude Code authentication."""

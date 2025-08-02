@@ -54,7 +54,7 @@ ags-web
 # 5. View diffs and restart agents as needed
 
 # The first run will require Claude auth to set up your credentials volume:
-docker run -it --rm -v claude-code-credentials:/home/node/.claude node:20 claude auth
+docker run -it --rm -v claude-code-credentials:/home/node/.claude claude-code-agent claude
 ```
 
 ## How It Works

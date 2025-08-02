@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict
 import asyncio
+import sys
+import traceback
 from datetime import datetime
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -79,10 +81,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan, title="Agent Process Server", version="2.0.0")
 
-# Add CORS middleware
+# Add CORS middleware - only allow localhost
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, replace with specific origins
+    allow_origins=["http://localhost:8080", "http://127.0.0.1:8080"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -98,9 +100,7 @@ def get_agent_manager(project_short_hash: str) -> AgentManager:
             raise ValueError(f"Project {project_short_hash} not found")
         
         # Create agent manager for this project
-        db_path = str(Path.home() / ".ags" / "agents.db")
         agent_managers[project_short_hash] = AgentManager(
-            db_path=db_path,
             project_path=project["local_path"]
         )
     
@@ -243,43 +243,37 @@ async def create_agent(agent_goal: AgentGoal, background_tasks: BackgroundTasks)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
-    # Generate unique name with timestamp
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    name = f"agent-{project['short_hash']}-{timestamp}"
-    
-    # Start agent in background
+    # Start agent in background - it will create its own name and record
     background_tasks.add_task(
         run_agent_background, 
-        name, 
         agent_goal.goal, 
         project["short_hash"],
         agent_manager
     )
     
-    # Return immediate response
-    agent_db = AgentDatabase()
-    agent_db.create_agent(name, agent_goal.goal, project_id=project["short_hash"])
+    # Return immediate response with placeholder name
+    placeholder_name = f"agent-{project['short_hash']}-pending"
     
     return AgentResponse(
-        name=name,
+        name=placeholder_name,
         goal=agent_goal.goal,
         project_id=project["short_hash"],
         started_at=datetime.now().isoformat(),
         ended_at=None,
-        status="AGENT_RUNNING",
+        status="AGENT_STARTING",
         diff_status=None
     )
 
 
-async def run_agent_background(name: str, goal: str, project_id: str, agent_manager: AgentManager):
+async def run_agent_background(goal: str, project_id: str, agent_manager: AgentManager):
     """Run agent in background."""
     try:
-        # Run the agent
-        await asyncio.to_thread(agent_manager.start_agent, goal)
+        # Run the agent - pass the project_id so it gets stored correctly
+        await asyncio.to_thread(agent_manager.start_agent, goal, project_id)
     except Exception as e:
-        # Update status on error
-        agent_db = AgentDatabase()
-        agent_db.update_agent_status(name, "ERROR", str(e))
+        print(f"ERROR: Agent background task failed: {e}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+
 
 
 @app.post("/agents/{agent_name}/restart", response_model=AgentResponse)
@@ -311,29 +305,24 @@ async def restart_agent(agent_name: str, background_tasks: BackgroundTasks):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
-    # Generate new name
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    new_name = f"{agent_name}-restart-{timestamp}"
-    
-    # Start in background
+    # Start new agent in background with same goal - it will create its own name
     background_tasks.add_task(
         run_agent_background, 
-        new_name, 
         original_agent["goal"],
         project["short_hash"],
         agent_manager
     )
     
-    # Create new agent record
-    agent_db.create_agent(new_name, original_agent["goal"], project_id=project["short_hash"])
+    # Return immediate response with placeholder name
+    placeholder_name = f"agent-{project['short_hash']}-restarting"
     
     return AgentResponse(
-        name=new_name,
+        name=placeholder_name,
         goal=original_agent["goal"],
         project_id=project["short_hash"],
         started_at=datetime.now().isoformat(),
         ended_at=None,
-        status="AGENT_RUNNING",
+        status="AGENT_STARTING",
         diff_status=None
     )
 
@@ -362,9 +351,9 @@ async def get_agent_logs(agent_name: str):
     response = []
     for log in logs:
         response.append(LogEntry(
-            timestamp=log["timestamp"],
-            level=log["level"],
-            message=log["message"],
+            timestamp=log["timestamp"] or "",
+            level=log["level"] or "INFO",
+            message=log["message"] or "",
             tool_name=log.get("tool_name"),
             tool_type=log.get("tool_type")
         ))

@@ -14,29 +14,36 @@ from typing import Optional
 class AgentManager:
     """Manages Claude Code agents with Docker and git worktrees."""
     
-    def __init__(self, db_path: str, project_path: Optional[str] = None):
+    def __init__(self, db_path: str = None, project_path: Optional[str] = None):
         self.console = Console()
         self.db = AgentDatabase(db_path)
         self.diff_manager = DiffManager(db_path)
         self.project_path = Path(project_path) if project_path else Path.cwd()
-        self.workspace_manager = WorkspaceManager(self.project_path)
         self.log_manager = LogManager(db_path)
+        self.workspace_manager = WorkspaceManager(self.project_path, self.log_manager)
         self.log_formatter = None
         self.project_name = self.project_path.name
     
-    def start_agent(self, goal: str):
+    def _log_system_message(self, agent_name: str, message: str, level: str = "INFO"):
+        """Log system messages to database only."""
+        # Store in database as system log
+        self.log_manager.log_message(agent_name, level, message, tool_name="SYSTEM", tool_type="AGS")
+    
+    def start_agent(self, goal: str, project_id: str):
         """Start a new agent."""
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         agent_id = f"agent--{timestamp}"
         
-        self.console.print(f"🚀 Starting agent [cyan]{agent_id}[/cyan]")
-        self.console.print(f"   Goal: {goal}")
+        # Create agent record first so we can log to it
+        agent_record_id = self.db.create_agent(agent_id, goal, project_id=project_id)
+        
+        self._log_system_message(agent_id, f"🚀 Starting agent {agent_id}")
+        self._log_system_message(agent_id, f"   Goal: {goal}")
         
         self.workspace_manager.cleanup_existing_agent(agent_id)
         
-        request_id = self.db.create_request(agent_id, self.project_name, goal)
         
-        self.log_formatter = AgentLogFormatter(self.console, self.log_manager._db, request_id)
+        self.log_formatter = AgentLogFormatter(self.console, self.log_manager._db, agent_id)
         
         try:
             workspace_path = self.workspace_manager.create_workspace(agent_id)
@@ -45,16 +52,18 @@ class AgentManager:
             self.workspace_manager.ensure_network()
             self.workspace_manager.start_proxy_container(agent_id)
             
+            self._log_system_message(agent_id, "🤖 Starting agent container...")
+            
             exit_code = self.workspace_manager.run_agent_container(
-                agent_id, goal, workspace_path, self.log_formatter
+                agent_id, goal, workspace_path
             )
             
             self.diff_manager.update_agent_status(agent_id, DiffStatus.AGENT_COMPLETE, exit_code=exit_code)
             
             if exit_code == 0:
-                self.console.print("✅ Agent completed successfully")
+                self._log_system_message(agent_id, "✅ Agent completed successfully")
             else:
-                self.console.print(f"❌ Agent failed with exit code: {exit_code}")
+                self._log_system_message(agent_id, f"❌ Agent failed with exit code: {exit_code}", "ERROR")
                 self.diff_manager.update_agent_status(
                     agent_id, DiffStatus.AGENT_COMPLETE, 
                     exit_code=exit_code, 
@@ -62,7 +71,7 @@ class AgentManager:
                 )
             
         except Exception as e:
-            self.console.print(f"❌ Agent failed: {e}")
+            self._log_system_message(agent_id, f"❌ Agent failed: {e}", "ERROR")
             self.diff_manager.update_agent_status(
                 agent_id, DiffStatus.AGENT_COMPLETE, 
                 exit_code=-1, 
@@ -73,7 +82,7 @@ class AgentManager:
     
     def _cleanup_and_commit(self, agent_id: str):
         """Clean up containers and generate diff."""
-        self.console.print("🧹 Cleaning up and generating diff...")
+        self._log_system_message(agent_id, "🧹 Cleaning up and generating diff...")
         
         self.workspace_manager.stop_containers(agent_id)
         
@@ -82,7 +91,7 @@ class AgentManager:
             self.diff_manager.generate_diff(agent_id, workspace_path)
             self.workspace_manager.remove_workspace(agent_id)
         
-        self.console.print(f"✅ Agent {agent_id} completed successfully")
+        self._log_system_message(agent_id, f"✅ Agent {agent_id} processing completed")
     
     
     
@@ -116,62 +125,3 @@ class AgentManager:
             return diff_record['diff_content']
         return None
     
-    def restart_agent(self, agent_name: str):
-        """Restart an existing agent with the same goal."""
-        # Get the existing agent record
-        agent_record = self.db.get_agent_status(agent_name)
-        if not agent_record:
-            raise Exception(f"Agent '{agent_name}' not found")
-        
-        goal = agent_record['goal']
-        
-        self.console.print(f"🔄 Restarting agent [cyan]{agent_name}[/cyan]")
-        self.console.print(f"   Goal: {goal}")
-        
-        # Reset the agent status and clear previous results
-        self.db.execute("""
-            UPDATE requests 
-            SET started_at = CURRENT_TIMESTAMP, 
-                completed_at = NULL,
-                diff_status = 'AGENT_RUNNING',
-                diff_content = NULL,
-                exit_code = NULL,
-                error_message = NULL
-            WHERE agent_name = ?
-        """, (agent_name,))
-        
-        request_id = self.db.get_request_id(agent_name)
-        self.log_formatter = AgentLogFormatter(self.console, self.log_manager._db, request_id)
-        
-        try:
-            workspace_path = self.workspace_manager.create_workspace(agent_name)
-            self.workspace_manager.setup_claude_settings(workspace_path)
-            self.workspace_manager.build_images()
-            self.workspace_manager.ensure_network()
-            self.workspace_manager.start_proxy_container(agent_name)
-            
-            exit_code = self.workspace_manager.run_agent_container(
-                agent_name, goal, workspace_path, self.log_formatter
-            )
-            
-            self.diff_manager.update_agent_status(agent_name, DiffStatus.AGENT_COMPLETE, exit_code=exit_code)
-            
-            if exit_code == 0:
-                self.console.print("✅ Agent completed successfully")
-            else:
-                self.console.print(f"❌ Agent failed with exit code: {exit_code}")
-                self.diff_manager.update_agent_status(
-                    agent_name, DiffStatus.AGENT_COMPLETE, 
-                    exit_code=exit_code, 
-                    error_message=f"Agent failed with exit code {exit_code}"
-                )
-            
-        except Exception as e:
-            self.console.print(f"❌ Agent failed: {e}")
-            self.diff_manager.update_agent_status(
-                agent_name, DiffStatus.AGENT_COMPLETE, 
-                exit_code=-1, 
-                error_message=str(e)
-            )
-        finally:
-            self._cleanup_and_commit(agent_name)
