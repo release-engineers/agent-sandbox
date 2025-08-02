@@ -345,10 +345,6 @@
                                 </div>
                             </div>
                             <div class="flex gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button onclick="viewDiff('${agent.name}'); event.stopPropagation();" 
-                                    class="px-2 py-1 text-xs text-slate-600 hover:bg-slate-200 rounded">Diff</button>
-                                <button onclick="viewLogs('${agent.name}'); event.stopPropagation();" 
-                                    class="px-2 py-1 text-xs text-slate-600 hover:bg-slate-200 rounded">Logs</button>
                                 <button onclick="restartAgent('${agent.name}'); event.stopPropagation();" 
                                     class="px-2 py-1 text-xs text-slate-600 hover:bg-slate-200 rounded">Restart</button>
                             </div>
@@ -363,54 +359,89 @@
         }
         
         // Select agent
-        window.selectAgent = function(agentName) {
+        window.selectAgent = async function(agentName) {
             // Highlight selected agent
             $('#agentsList .border-slate-900').removeClass('border-slate-900').addClass('border-transparent');
             $(`#agentsList div[onclick="selectAgent('${agentName}')"]`).removeClass('border-transparent').addClass('border-slate-900');
             
-            // Update main content with agent details
+            // Update main content header
             $('#mainTitle').text(`Agent: ${agentName}`);
-            $('#mainSubtitle').text('View diff or logs for this agent');
-            $('#mainContent').html(`
-                <div class="p-6">
-                    <div class="grid grid-cols-2 gap-4 h-full">
-                        <div class="border border-slate-200 rounded-lg p-4 hover:border-slate-300 cursor-pointer transition-colors" 
-                             onclick="viewDiff('${agentName}')">
-                            <div class="flex items-center gap-3 mb-3">
-                                <div class="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
-                                    <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                                    </svg>
-                                </div>
-                                <div>
-                                    <h3 class="font-medium text-slate-900">View Diff</h3>
-                                    <p class="text-sm text-slate-600">See code changes made by this agent</p>
-                                </div>
+            $('#mainSubtitle').text('Code changes and execution logs');
+            
+            // Show loading state
+            $('#mainContent').html('<div class="h-full flex items-center justify-center"><div class="spinner"></div></div>');
+            
+            // Load both diff and logs
+            try {
+                const [diffResponse, logsResponse] = await Promise.all([
+                    fetch(`${API_BASE}/agents/${agentName}/diff`),
+                    fetch(`${API_BASE}/agents/${agentName}/logs`)
+                ]);
+                
+                let diffContent = '';
+                let logsContent = '';
+                
+                if (diffResponse.ok) {
+                    const diff = await diffResponse.json();
+                    diffContent = diff.content;
+                } else {
+                    diffContent = 'No diff available for this agent';
+                }
+                
+                if (logsResponse.ok) {
+                    const logs = await logsResponse.json();
+                    const logsHtml = logs.map(log => {
+                        const timestamp = new Date(log.timestamp).toLocaleString();
+                        const level = log.level || 'INFO';
+                        const levelColors = {
+                            'INFO': 'text-blue-400',
+                            'ERROR': 'text-red-400', 
+                            'WARN': 'text-yellow-400',
+                            'DEBUG': 'text-slate-400'
+                        };
+                        const levelColor = levelColors[level] || 'text-slate-400';
+                        
+                        return `<div class="font-mono text-xs text-slate-300 mb-1">
+                            <span class="text-slate-500">[${timestamp}]</span>
+                            <span class="${levelColor}">${level}</span>
+                            ${log.tool_name ? `<span class="text-purple-400">[${log.tool_name}]</span>` : ''}
+                            <span class="ml-2">${log.message}</span>
+                        </div>`;
+                    }).join('');
+                    logsContent = logsHtml || '<div class="text-slate-500 text-center py-8 w-full">No logs found</div>';
+                } else {
+                    logsContent = '<div class="text-slate-500 text-center py-8 w-full">No logs available</div>';
+                }
+                
+                // Display diff (60%) and logs (40%) in IDE-style layout
+                $('#mainContent').removeClass('flex items-center justify-center text-slate-400').html(`
+                    <div class="h-full flex flex-col">
+                        <!-- Diff Section (60%) -->
+                        <div class="flex-[3] border-b border-slate-200 bg-white">
+                            <div class="h-full overflow-y-auto">
+                                <pre class="h-full p-4 text-xs font-mono text-slate-800 whitespace-pre-wrap overflow-x-auto">${diffContent}</pre>
                             </div>
                         </div>
-                        <div class="border border-slate-200 rounded-lg p-4 hover:border-slate-300 cursor-pointer transition-colors" 
-                             onclick="viewLogs('${agentName}')">
-                            <div class="flex items-center gap-3 mb-3">
-                                <div class="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center">
-                                    <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                                    </svg>
-                                </div>
-                                <div>
-                                    <h3 class="font-medium text-slate-900">View Logs</h3>
-                                    <p class="text-sm text-slate-600">See execution logs for this agent</p>
-                                </div>
+                        
+                        <!-- Terminal/Logs Section (40%) -->
+                        <div class="flex-[2] bg-slate-900">
+                            <div class="h-full overflow-y-auto p-4">
+                                ${logsContent}
                             </div>
                         </div>
                     </div>
-                    <div class="mt-6 flex gap-3 justify-center">
-                        <button onclick="restartAgent('${agentName}')" 
-                            class="px-4 py-2 bg-slate-900 text-white text-sm rounded-lg hover:bg-slate-800 transition-colors">
-                            Restart Agent
-                        </button>
+                `);
+                
+            } catch (error) {
+                $('#mainContent').html(`
+                    <div class="h-full flex items-center justify-center text-red-600">
+                        <div class="text-center">
+                            <p>Error loading agent details</p>
+                            <p class="text-sm mt-2">${error.message}</p>
+                        </div>
                     </div>
-                </div>
-            `);
+                `);
+            }
         };
         
         // Create agent
@@ -448,84 +479,6 @@
             }
         });
         
-        // View diff
-        window.viewDiff = async function(agentName) {
-            try {
-                const response = await fetch(`${API_BASE}/agents/${agentName}/diff`);
-                if (response.ok) {
-                    const diff = await response.json();
-                    $('#mainTitle').text(`Diff - ${agentName}`);
-                    $('#mainSubtitle').text('Code changes made by this agent');
-                    $('#mainContent').html(`
-                        <div class="h-full flex flex-col">
-                            <div class="flex-1 p-4 overflow-y-auto">
-                                <pre class="font-mono text-xs bg-slate-50 p-4 rounded-lg whitespace-pre-wrap overflow-x-auto border">${diff.content}</pre>
-                            </div>
-                            <div class="border-t border-slate-200 p-4 bg-slate-50">
-                                <button onclick="selectAgent('${agentName}')" 
-                                    class="px-3 py-1.5 text-sm text-slate-600 hover:bg-white rounded border">
-                                    ← Back to Agent
-                                </button>
-                            </div>
-                        </div>
-                    `);
-                } else {
-                    showToast('No diff available for this agent', 'error');
-                }
-            } catch (error) {
-                showToast(`Error: ${error.message}`, 'error');
-            }
-        };
-        
-        // View logs
-        window.viewLogs = async function(agentName) {
-            try {
-                const response = await fetch(`${API_BASE}/agents/${agentName}/logs`);
-                if (response.ok) {
-                    const logs = await response.json();
-                    const html = logs.map(log => {
-                        const timestamp = new Date(log.timestamp).toLocaleString();
-                        const level = log.level || 'INFO';
-                        const levelColors = {
-                            'INFO': 'text-blue-600',
-                            'ERROR': 'text-red-600', 
-                            'WARN': 'text-orange-600',
-                            'DEBUG': 'text-slate-500'
-                        };
-                        const levelColor = levelColors[level] || 'text-slate-600';
-                        
-                        return `<div class="border-b border-slate-200 pb-3 mb-3 last:border-b-0">
-                            <div class="flex items-center gap-2 text-xs text-slate-500 mb-2">
-                                <span>[${timestamp}]</span>
-                                <span class="${levelColor} font-medium">${level}</span>
-                                ${log.tool_name ? `<span class="bg-slate-100 px-2 py-0.5 rounded text-slate-700">${log.tool_name}</span>` : ''}
-                            </div>
-                            <div class="text-sm text-slate-700 font-mono bg-slate-50 p-2 rounded">${log.message}</div>
-                        </div>`;
-                    }).join('');
-                    
-                    $('#mainTitle').text(`Logs - ${agentName}`);
-                    $('#mainSubtitle').text('Execution logs for this agent');
-                    $('#mainContent').html(`
-                        <div class="h-full flex flex-col">
-                            <div class="flex-1 p-4 overflow-y-auto">
-                                ${html || '<div class="text-slate-500 text-center py-8">No logs found</div>'}
-                            </div>
-                            <div class="border-t border-slate-200 p-4 bg-slate-50">
-                                <button onclick="selectAgent('${agentName}')" 
-                                    class="px-3 py-1.5 text-sm text-slate-600 hover:bg-white rounded border">
-                                    ← Back to Agent
-                                </button>
-                            </div>
-                        </div>
-                    `);
-                } else {
-                    showToast('No logs available for this agent', 'error');
-                }
-            } catch (error) {
-                showToast(`Error: ${error.message}`, 'error');
-            }
-        };
         
         // Restart agent
         window.restartAgent = async function(agentName) {
