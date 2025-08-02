@@ -114,6 +114,15 @@
                     <div id="createAgentForm" class="hidden mb-4 p-3 bg-slate-50 rounded-lg">
                         <input type="text" id="agentGoal" placeholder="Describe what you want the agent to do..." 
                             class="w-full px-2 py-1.5 border border-slate-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 mb-2">
+                        
+                        <select id="agentPurpose" class="w-full px-2 py-1.5 border border-slate-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 mb-2">
+                            <option value="requirements">Generate Requirements</option>
+                            <option value="technical_spec">Write Technical Spec</option>
+                            <option value="implementation_plan">Create Implementation Plan</option>
+                            <option value="implementation" selected>Implement Changes</option>
+                            <option value="quality_check">Check Quality</option>
+                        </select>
+                        
                         <button id="createAgent" class="w-full px-2 py-1.5 bg-slate-900 text-white text-xs rounded hover:bg-slate-800">
                             Start Agent
                         </button>
@@ -157,6 +166,8 @@
         const API_BASE = 'http://localhost:8000';
         let selectedProjectId = null;
         let refreshInterval = null;
+        let selectedAgentName = null;
+        let logsRefreshInterval = null;
         
         // Toast notification system
         function showToast(message, type = 'info') {
@@ -334,6 +345,14 @@
                     
                     const statusColor = statusColors[displayStatus] || 'text-slate-500';
                     
+                    const phaseLabels = {
+                        'requirements': 'REQ',
+                        'technical_spec': 'SPEC',
+                        'implementation_plan': 'PLAN',
+                        'implementation': 'IMPL',
+                        'quality_check': 'QA'
+                    };
+                    
                     return `
                         <div class="group p-2 rounded hover:bg-slate-50 cursor-pointer border-l-2 border-transparent hover:border-slate-300 transition-all" 
                              onclick="selectAgent('${agent.name}')">
@@ -341,7 +360,10 @@
                                 <span class="${statusColor} text-xs mt-0.5">${statusIcons[displayStatus] || '⭕'}</span>
                                 <div class="flex-1 min-w-0">
                                     <div class="text-xs font-medium text-slate-900 truncate">${agent.goal}</div>
-                                    <div class="text-xs text-slate-500 mt-0.5">${new Date(agent.started_at).toLocaleString()}</div>
+                                    <div class="flex items-center gap-2 mt-0.5">
+                                        <span class="text-xs text-slate-500">${new Date(agent.started_at).toLocaleString()}</span>
+                                        <span class="text-xs bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded">${phaseLabels[agent.phase] || agent.phase}</span>
+                                    </div>
                                 </div>
                             </div>
                             <div class="flex gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -358,34 +380,106 @@
             }
         }
         
+        // Check if logs container is scrolled to bottom
+        function isLogsScrolledToBottom() {
+            const logsContainer = $('.flex-\\[2\\].bg-slate-900 > div');
+            if (logsContainer.length === 0) return true;
+            
+            const container = logsContainer[0];
+            const threshold = 50; // Allow 50px from bottom
+            return container.scrollTop + container.clientHeight >= container.scrollHeight - threshold;
+        }
+        
+        // Refresh logs for currently selected agent
+        async function refreshAgentLogs() {
+            if (!selectedAgentName) return;
+            
+            // Only refresh if scrolled to bottom
+            const wasAtBottom = isLogsScrolledToBottom();
+            if (!wasAtBottom) return;
+            
+            try {
+                const logsResponse = await fetch(`${API_BASE}/agents/${selectedAgentName}/logs`);
+                if (!logsResponse.ok) return;
+                
+                const logs = await logsResponse.json();
+                const logsHtml = logs.map(log => {
+                    const timestamp = new Date(log.timestamp).toLocaleString();
+                    const level = log.level || 'INFO';
+                    const levelColors = {
+                        'INFO': 'text-blue-400',
+                        'ERROR': 'text-red-400', 
+                        'WARN': 'text-yellow-400',
+                        'DEBUG': 'text-slate-400'
+                    };
+                    const levelColor = levelColors[level] || 'text-slate-400';
+                    
+                    return `<div class="font-mono text-xs text-slate-300 mb-1">
+                        <span class="text-slate-500">[${timestamp}]</span>
+                        <span class="${levelColor}">${level}</span>
+                        ${log.tool_name ? `<span class="text-purple-400">[${log.tool_name}]</span>` : ''}
+                        <span class="ml-2">${log.message}</span>
+                    </div>`;
+                }).join('');
+                
+                const logsContent = logsHtml || '<div class="text-slate-500 text-center py-8 w-full">No logs found</div>';
+                
+                // Update logs and maintain scroll position
+                const logsContainer = $('.flex-\\[2\\].bg-slate-900 > div');
+                logsContainer.html(logsContent);
+                
+                // Keep scrolled to bottom
+                if (wasAtBottom) {
+                    const container = logsContainer[0];
+                    container.scrollTop = container.scrollHeight;
+                }
+            } catch (error) {
+                // Silently fail to avoid spam
+            }
+        }
+        
         // Select agent
         window.selectAgent = async function(agentName) {
+            // Update selected agent
+            selectedAgentName = agentName;
+            
+            // Clear existing logs refresh interval
+            if (logsRefreshInterval) clearInterval(logsRefreshInterval);
+            
             // Highlight selected agent
             $('#agentsList .border-slate-900').removeClass('border-slate-900').addClass('border-transparent');
             $(`#agentsList div[onclick="selectAgent('${agentName}')"]`).removeClass('border-transparent').addClass('border-slate-900');
             
             // Update main content header
             $('#mainTitle').text(`Agent: ${agentName}`);
-            $('#mainSubtitle').text('Code changes and execution logs');
+            $('#mainSubtitle').text('Agent execution results and logs');
             
             // Show loading state
             $('#mainContent').html('<div class="h-full flex items-center justify-center"><div class="spinner"></div></div>');
             
-            // Load both diff and logs
+            // Load results and logs
             try {
-                const [diffResponse, logsResponse] = await Promise.all([
-                    fetch(`${API_BASE}/agents/${agentName}/diff`),
-                    fetch(`${API_BASE}/agents/${agentName}/logs`)
+                const [resultsResponse, logsResponse, diffResponse] = await Promise.all([
+                    fetch(`${API_BASE}/agents/${agentName}/results`),
+                    fetch(`${API_BASE}/agents/${agentName}/logs`),
+                    fetch(`${API_BASE}/agents/${agentName}/diff`) // Keep for backward compatibility
                 ]);
                 
-                let diffContent = '';
+                let results = [];
                 let logsContent = '';
                 
-                if (diffResponse.ok) {
+                // Get results or fall back to diff for old agents
+                if (resultsResponse.ok) {
+                    results = await resultsResponse.json();
+                } else if (diffResponse.ok) {
+                    // Fallback for agents without new results
                     const diff = await diffResponse.json();
-                    diffContent = diff.content;
-                } else {
-                    diffContent = 'No diff available for this agent';
+                    results = [{
+                        phase: 'implementation',
+                        result_type: 'git_diff',
+                        content: diff.content,
+                        created_at: new Date().toISOString()
+                    }];
                 }
                 
                 if (logsResponse.ok) {
@@ -413,14 +507,65 @@
                     logsContent = '<div class="text-slate-500 text-center py-8 w-full">No logs available</div>';
                 }
                 
-                // Display diff (60%) and logs (40%) in IDE-style layout
+                // Create tabs for results
+                const phaseLabels = {
+                    'requirements': 'Requirements',
+                    'technical_spec': 'Technical Spec',
+                    'implementation_plan': 'Implementation Plan',
+                    'implementation': 'Implementation',
+                    'quality_check': 'Quality Check'
+                };
+                
+                const tabs = results.map((result, index) => {
+                    const label = phaseLabels[result.phase] || result.phase;
+                    return `<button class="tab-button px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 border-b-2 ${index === 0 ? 'border-slate-900 text-slate-900' : 'border-transparent'}" 
+                                    data-index="${index}">${label}</button>`;
+                }).join('');
+                
+                const tabContents = results.map((result, index) => {
+                    let content = '';
+                    if (result.result_type === 'quality' && result.metadata) {
+                        // Display quality metrics
+                        content = `
+                            <div class="p-6">
+                                <h3 class="text-lg font-medium mb-4">Quality Metrics</h3>
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div class="bg-green-50 p-4 rounded">
+                                        <div class="text-2xl font-bold text-green-700">${result.metadata.quality_score || 0}</div>
+                                        <div class="text-sm text-green-600">Quality Score</div>
+                                    </div>
+                                    <div class="bg-blue-50 p-4 rounded">
+                                        <div class="text-2xl font-bold text-blue-700">${result.metadata.tests_passed ? '✓' : '✗'}</div>
+                                        <div class="text-sm text-blue-600">Tests Passed</div>
+                                    </div>
+                                </div>
+                                <pre class="mt-4 p-4 bg-slate-100 rounded text-xs overflow-auto">${JSON.stringify(result.metadata, null, 2)}</pre>
+                            </div>
+                        `;
+                    } else {
+                        // Display content as text/diff
+                        content = `<pre class="h-full p-4 text-xs font-mono text-slate-800 whitespace-pre-wrap overflow-x-auto">${result.content || 'No content available'}</pre>`;
+                    }
+                    
+                    return `<div class="tab-content ${index === 0 ? '' : 'hidden'}" data-index="${index}">${content}</div>`;
+                }).join('');
+                
+                // Display tabbed view with logs
                 $('#mainContent').removeClass('flex items-center justify-center text-slate-400').html(`
                     <div class="h-full flex flex-col">
-                        <!-- Diff Section (60%) -->
-                        <div class="flex-[3] border-b border-slate-200 bg-white">
-                            <div class="h-full overflow-y-auto">
-                                <pre class="h-full p-4 text-xs font-mono text-slate-800 whitespace-pre-wrap overflow-x-auto">${diffContent}</pre>
-                            </div>
+                        <!-- Tabs Section (60%) -->
+                        <div class="flex-[3] border-b border-slate-200 bg-white flex flex-col">
+                            ${results.length > 0 ? `
+                                <div class="border-b border-slate-200 flex">
+                                    ${tabs}
+                                    <button class="ml-auto px-4 py-2 text-sm text-slate-600 hover:text-slate-900" onclick="runQualityCheck('${agentName}')">
+                                        Run Quality Check
+                                    </button>
+                                </div>
+                                <div class="flex-1 overflow-y-auto">
+                                    ${tabContents}
+                                </div>
+                            ` : '<div class="flex-1 flex items-center justify-center text-slate-500">No results available</div>'}
                         </div>
                         
                         <!-- Terminal/Logs Section (40%) -->
@@ -431,6 +576,18 @@
                         </div>
                     </div>
                 `);
+                
+                // Tab switching logic
+                $('.tab-button').click(function() {
+                    const index = $(this).data('index');
+                    $('.tab-button').removeClass('border-slate-900 text-slate-900').addClass('border-transparent text-slate-600');
+                    $(this).removeClass('border-transparent text-slate-600').addClass('border-slate-900 text-slate-900');
+                    $('.tab-content').addClass('hidden');
+                    $(`.tab-content[data-index="${index}"]`).removeClass('hidden');
+                });
+                
+                // Start logs auto-refresh (every 2 seconds)
+                logsRefreshInterval = setInterval(refreshAgentLogs, 2000);
                 
             } catch (error) {
                 $('#mainContent').html(`
@@ -452,6 +609,8 @@
                 return;
             }
             
+            const purpose = $('#agentPurpose').val();
+            
             $(this).prop('disabled', true).html('<div class="spinner mx-auto"></div>');
             
             try {
@@ -460,7 +619,8 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
                         goal: goal,
-                        project_id: selectedProjectId 
+                        project_id: selectedProjectId,
+                        purpose: purpose
                     })
                 });
                 
@@ -479,6 +639,28 @@
             }
         });
         
+        
+        // Run quality check
+        window.runQualityCheck = async function(agentName) {
+            try {
+                showToast('Running quality check...', 'info');
+                const response = await fetch(`${API_BASE}/agents/${agentName}/quality`, {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    showToast(`Quality check complete: Score ${result.quality_score}`, 'success');
+                    // Reload agent to show new quality result
+                    await selectAgent(agentName);
+                } else {
+                    const error = await response.json();
+                    showToast(`Error: ${error.detail}`, 'error');
+                }
+            } catch (error) {
+                showToast(`Error: ${error.message}`, 'error');
+            }
+        };
         
         // Restart agent
         window.restartAgent = async function(agentName) {
@@ -513,6 +695,7 @@
         // Cleanup on page unload
         $(window).on('beforeunload', function() {
             if (refreshInterval) clearInterval(refreshInterval);
+            if (logsRefreshInterval) clearInterval(logsRefreshInterval);
         });
     </script>
 </body>

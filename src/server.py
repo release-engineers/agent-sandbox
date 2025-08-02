@@ -1,7 +1,8 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
+from enum import Enum
 import asyncio
 import sys
 import traceback
@@ -14,6 +15,8 @@ from .agent import AgentManager
 from .agent_db import AgentDatabase
 from .diff_db import DiffDatabase
 from .log_db import LogDatabase
+from .result_db import ResultDatabase
+from .result_collector import ResultType, AgentPhase, get_target_files_for_phase
 
 
 class ProjectRequest(BaseModel):
@@ -36,12 +39,15 @@ class ProjectResponse(BaseModel):
 class AgentGoal(BaseModel):
     goal: str
     project_id: str  # Can be project short_hash or git_url
+    purpose: str = "implementation"  # Single purpose field
 
 
 class AgentResponse(BaseModel):
     name: str
     goal: str
     project_id: str
+    phase: str
+    result_type: str
     started_at: str
     ended_at: Optional[str]
     status: str
@@ -59,6 +65,15 @@ class LogEntry(BaseModel):
     message: str
     tool_name: Optional[str]
     tool_type: Optional[str]
+
+
+class AgentResultResponse(BaseModel):
+    agent_name: str
+    phase: str
+    result_type: str
+    content: str
+    metadata: Optional[Dict[str, Any]] = None
+    created_at: str
 
 
 # Global instances
@@ -89,6 +104,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def map_purpose_to_config(purpose: str) -> tuple[str, str, Optional[List[str]]]:
+    """Map purpose to (phase, result_type, target_files) configuration."""
+    purpose_mapping = {
+        "requirements": ("requirements", "document"),
+        "technical_spec": ("technical_spec", "document"),
+        "implementation_plan": ("implementation_plan", "document"),
+        "implementation": ("implementation", "git_diff"),
+        "quality_check": ("quality_check", "quality")
+    }
+    
+    phase, result_type = purpose_mapping.get(purpose, ("implementation", "git_diff"))
+    target_files = get_target_files_for_phase(phase) if result_type == "document" else None
+    
+    return phase, result_type, target_files
 
 
 def get_agent_manager(project_short_hash: str) -> AgentManager:
@@ -211,9 +242,11 @@ async def list_agents(project_id: Optional[str] = None):
             name=agent["name"],
             goal=agent["goal"],
             project_id=agent.get("project_id", "unknown"),
+            phase=agent.get("phase", "implementation"),
+            result_type=agent.get("result_type", "git_diff"),
             started_at=agent["started_at"],
             ended_at=agent["ended_at"],
-            status=agent["status"],
+            status=agent["status"] or "AGENT_RUNNING",  # Handle None values
             diff_status=agent.get("diff_status")
         ))
     
@@ -243,12 +276,18 @@ async def create_agent(agent_goal: AgentGoal, background_tasks: BackgroundTasks)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
+    # Map purpose to phase, result_type, and target_files
+    phase, result_type, target_files = map_purpose_to_config(agent_goal.purpose)
+    
     # Start agent in background - it will create its own name and record
     background_tasks.add_task(
         run_agent_background, 
         agent_goal.goal, 
         project["short_hash"],
-        agent_manager
+        agent_manager,
+        phase,
+        result_type,
+        target_files
     )
     
     # Return immediate response with placeholder name
@@ -258,6 +297,8 @@ async def create_agent(agent_goal: AgentGoal, background_tasks: BackgroundTasks)
         name=placeholder_name,
         goal=agent_goal.goal,
         project_id=project["short_hash"],
+        phase=phase,
+        result_type=result_type,
         started_at=datetime.now().isoformat(),
         ended_at=None,
         status="AGENT_STARTING",
@@ -265,11 +306,13 @@ async def create_agent(agent_goal: AgentGoal, background_tasks: BackgroundTasks)
     )
 
 
-async def run_agent_background(goal: str, project_id: str, agent_manager: AgentManager):
+async def run_agent_background(goal: str, project_id: str, agent_manager: AgentManager,
+                             phase: str = 'implementation', result_type: str = 'git_diff',
+                             target_files: Optional[List[str]] = None):
     """Run agent in background."""
     try:
         # Run the agent - pass the project_id so it gets stored correctly
-        await asyncio.to_thread(agent_manager.start_agent, goal, project_id)
+        await asyncio.to_thread(agent_manager.start_agent, goal, project_id, phase, result_type, target_files)
     except Exception as e:
         print(f"ERROR: Agent background task failed: {e}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
@@ -305,12 +348,22 @@ async def restart_agent(agent_name: str, background_tasks: BackgroundTasks):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
+    # Get original agent's phase and result_type for restart
+    original_phase = original_agent.get("phase", "implementation")
+    original_result_type = original_agent.get("result_type", "git_diff")
+    
+    # Determine target_files based on the original phase
+    _, _, target_files = map_purpose_to_config(original_phase)
+    
     # Start new agent in background with same goal - it will create its own name
     background_tasks.add_task(
         run_agent_background, 
         original_agent["goal"],
         project["short_hash"],
-        agent_manager
+        agent_manager,
+        original_phase,
+        original_result_type,
+        target_files
     )
     
     # Return immediate response with placeholder name
@@ -320,6 +373,8 @@ async def restart_agent(agent_name: str, background_tasks: BackgroundTasks):
         name=placeholder_name,
         goal=original_agent["goal"],
         project_id=project["short_hash"],
+        phase=original_agent.get("phase", "implementation"),
+        result_type=original_agent.get("result_type", "git_diff"),
         started_at=datetime.now().isoformat(),
         ended_at=None,
         status="AGENT_STARTING",
@@ -388,6 +443,67 @@ async def cleanup_all_agents(project_id: Optional[str] = None):
             raise HTTPException(status_code=500, detail="; ".join(errors))
         
         return {"message": "All agents cleaned up successfully"}
+
+
+@app.get("/agents/{agent_name}/results", response_model=List[AgentResultResponse])
+async def get_agent_results(agent_name: str):
+    """Get all results for a specific agent."""
+    # Get agent to find project
+    agent_db = AgentDatabase()
+    agent = agent_db.get_agent_by_name(agent_name)
+    if not agent:
+        raise HTTPException(status_code=404, detail=f"Agent {agent_name} not found")
+    
+    project_id = agent.get("project_id")
+    if not project_id:
+        raise HTTPException(status_code=400, detail="Agent has no project ID")
+    
+    # Get agent manager for project
+    try:
+        agent_manager = get_agent_manager(project_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+    # Get all results
+    results = await asyncio.to_thread(agent_manager.get_agent_results, agent_name)
+    
+    response = []
+    for result in results:
+        response.append(AgentResultResponse(
+            agent_name=result["agent_name"],
+            phase=result["phase"],
+            result_type=result["result_type"],
+            content=result["content"] or "",
+            metadata=result.get("metadata"),
+            created_at=result["created_at"] or ""
+        ))
+    
+    return response
+
+
+@app.post("/agents/{agent_name}/quality")
+async def run_quality_check(agent_name: str):
+    """Run quality check on agent's results."""
+    # Get agent to find project
+    agent_db = AgentDatabase()
+    agent = agent_db.get_agent_by_name(agent_name)
+    if not agent:
+        raise HTTPException(status_code=404, detail=f"Agent {agent_name} not found")
+    
+    project_id = agent.get("project_id")
+    if not project_id:
+        raise HTTPException(status_code=400, detail="Agent has no project ID")
+    
+    # Get agent manager for project
+    try:
+        agent_manager = get_agent_manager(project_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+    # Run quality check
+    result = await asyncio.to_thread(agent_manager.run_quality_check, agent_name)
+    
+    return result
 
 
 @app.get("/health")
