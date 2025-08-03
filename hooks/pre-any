@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# Read JSON input from stdin
+json_input=$(cat)
+
+# Ensure log directory exists
+mkdir -p /var/log
+
+# Append to log file with timestamp
+echo "[$(date -u '+%Y-%m-%d %H:%M:%S.%3N')] PreToolUse: $json_input" >> /var/log/ags.log
+
+# Always approve (exit 0)
+exit 0

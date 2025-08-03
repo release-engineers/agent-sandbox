@@ -32,8 +32,9 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 ENV CLAUDE_CONFIG_DIR="/home/node/.claude"
 
 # Create workspace and config directories
-RUN mkdir -p /workspace /home/node/.claude /hooks && \
-    chown -R node:node /workspace /home/node/.claude /hooks
+RUN mkdir -p /workspace /home/node/.claude /hooks /var/log && \
+    chown -R node:node /workspace /home/node/.claude /hooks && \
+    chmod 777 /var/log
 
 # Copy hook scripts
 COPY hooks/ /hooks/

@@ -4,6 +4,8 @@
 import sys
 import json
 import subprocess
+import threading
+import time
 from pathlib import Path
 
 import click
@@ -87,6 +89,7 @@ class AgentManager:
         settings = {
             "hooks": {
                 "PreToolUse": [
+                    {"matcher": ".*", "hooks": [{"type": "command", "command": "/hooks/pre-any"}]},
                     {"matcher": "Bash", "hooks": [{"type": "command", "command": "/hooks/pre-bash"}]},
                     {"matcher": "Write|Edit|MultiEdit", "hooks": [{"type": "command", "command": "/hooks/pre-writes"}]}
                 ],
@@ -139,6 +142,12 @@ class AgentManager:
         print("Starting agent container...")
         
         try:
+            # Create log file in worktree
+            log_dir = worktree_path / "var" / "log"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            log_file = log_dir / "ags.log"
+            log_file.touch()
+            
             # Create and start container to properly stream output
             container = self.docker.containers.create(
                 "claude-code-agent",
@@ -151,7 +160,8 @@ class AgentManager:
                 },
                 volumes={
                     str(worktree_path): {"bind": "/workspace", "mode": "rw"},
-                    "claude-code-credentials": {"bind": "/home/node/.claude", "mode": "rw"}
+                    "claude-code-credentials": {"bind": "/home/node/.claude", "mode": "rw"},
+                    str(log_dir): {"bind": "/var/log", "mode": "rw"}
                 },
                 working_dir="/workspace",
                 user="node",
@@ -161,7 +171,28 @@ class AgentManager:
             # Start container
             container.start()
             
-            # Stream logs in real-time
+            # Tail the log file instead of container logs
+            import threading
+            import time
+            
+            def tail_log_file():
+                """Tail the log file and print new lines."""
+                with open(log_file, 'r') as f:
+                    # Move to end of file
+                    f.seek(0, 2)
+                    while container.status in ['running', 'created']:
+                        line = f.readline()
+                        if line:
+                            print(f"[LOG] {line.rstrip()}")
+                        else:
+                            time.sleep(0.1)
+            
+            # Start tailing in a separate thread
+            tail_thread = threading.Thread(target=tail_log_file)
+            tail_thread.daemon = True
+            tail_thread.start()
+            
+            # Also stream regular container logs
             for line in container.logs(stream=True, follow=True):
                 print(line.decode('utf-8', errors='ignore').rstrip())
             
