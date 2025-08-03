@@ -260,21 +260,34 @@ class AgentManager:
         except docker.errors.NotFound:
             pass
         
-        # Remove all worktrees
-        result = self._run_command(["git", "worktree", "list"])
+        # First, force remove all worktrees
+        result = self._run_command(["git", "worktree", "list", "--porcelain"])
+        worktree_paths = []
         for line in result.stdout.strip().split("\n"):
-            if "/worktrees/" in line:
-                path = line.split()[0]
-                print(f"Removing worktree: {path}")
-                self._run_command(["git", "worktree", "remove", path])
+            if line.startswith("worktree ") and "/worktrees/" in line:
+                path = line.replace("worktree ", "").strip()
+                worktree_paths.append(path)
         
-        # Delete agent branches
+        for path in worktree_paths:
+            print(f"Force removing worktree: {path}")
+            # Use --force to ensure removal even if there are uncommitted changes
+            remove_result = self._run_command(["git", "worktree", "remove", "--force", path])
+            if remove_result.returncode != 0:
+                print(f"  Warning: {remove_result.stderr}")
+        
+        # Run prune to clean up any stale worktree references
+        print("Pruning stale worktree references...")
+        self._run_command(["git", "worktree", "prune"])
+        
+        # Now delete agent branches
         result = self._run_command(["git", "branch"])
         for line in result.stdout.strip().split("\n"):
             branch = line.strip().lstrip("* ")  # Remove current branch indicator
             if branch.startswith("agent--") or branch.startswith("test-"):
                 print(f"Deleting branch: {branch}")
-                self._run_command(["git", "branch", "-D", branch])
+                delete_result = self._run_command(["git", "branch", "-D", branch])
+                if delete_result.returncode != 0:
+                    print(f"  Warning: {delete_result.stderr}")
         
         print("Cleanup completed")
     
