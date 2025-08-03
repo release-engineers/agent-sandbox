@@ -74,14 +74,22 @@ class AgentManager:
         with open(claude_dir / "settings.json", "w") as f:
             json.dump(settings, f, indent=2)
         
-        # Build image if needed
-        if not self._image_exists("claude-code-agent"):
-            print("Building agent image...")
-            self.docker.images.build(
-                path=str(self.git_root),
-                dockerfile="Dockerfile.agent",
-                tag="claude-code-agent"
-            )
+        # Build images
+        agent_process_dir = Path(__file__).parent
+        
+        print("Building agent image...")
+        self.docker.images.build(
+            path=str(agent_process_dir),
+            dockerfile="Dockerfile.agent",
+            tag="claude-code-agent"
+        )
+        
+        print("Building proxy image...")
+        self.docker.images.build(
+            path=str(agent_process_dir),
+            dockerfile="Dockerfile.proxy",
+            tag="claude-code-proxy"
+        )
         
         # Create network if needed
         try:
@@ -259,13 +267,6 @@ class AgentManager:
             auto_remove=True
         )
     
-    def _image_exists(self, name: str) -> bool:
-        """Check if Docker image exists."""
-        try:
-            self.docker.images.get(name)
-            return
-        except docker.errors.ImageNotFound:
-            return False
 
 
 @click.group()

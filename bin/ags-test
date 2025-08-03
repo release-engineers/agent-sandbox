@@ -1,9 +1,13 @@
 #!/bin/bash
-set -e
+# Agent Sandbox Test (ags-test) - Test script for agent.py
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
-# Run the agent-test.py from the parent directory
-cd "$SCRIPT_DIR/.."
-python3 agent-test.py "$@"
+# Change to example directory and activate virtual environment
+cd "$PROJECT_DIR/example"
+source "$PROJECT_DIR/venv/bin/activate"
+
+# Run agent with simple test task
+exec "$PROJECT_DIR/agent.py" start test-fix "Add a simple comment to main.go"
