@@ -36,15 +36,42 @@ class AgentManager:
         """Run a command and return result."""
         return subprocess.run(cmd, capture_output=True, text=True)
     
+    def _cleanup_existing_agent(self, name: str):
+        """Clean up any existing agent environment."""
+        # Stop and remove containers
+        for container_name in [name, f"proxy-{name}"]:
+            try:
+                container = self.docker.containers.get(container_name)
+                print(f"Stopping existing container: {container_name}")
+                container.stop()
+                container.remove()
+            except docker.errors.NotFound:
+                pass
+        
+        # Remove existing worktree
+        worktree_path = self.worktree_dir / name
+        if worktree_path.exists():
+            print(f"Removing existing worktree: {worktree_path}")
+            # Force remove the worktree
+            self._run_command(["git", "worktree", "remove", "--force", str(worktree_path)])
+        
+        # Check if branch exists and delete it
+        branch_name = f"agent--{name}"
+        result = self._run_command(["git", "branch", "--list", branch_name])
+        if result.stdout.strip():
+            print(f"Deleting existing branch: {branch_name}")
+            self._run_command(["git", "branch", "-D", branch_name])
+    
     def start_agent(self, name: str, goal: str):
         """Start a new agent."""
         print(f"Starting agent: {name}")
         print(f"Goal: {goal}")
         
+        # Clean up any existing environment for this name
+        self._cleanup_existing_agent(name)
+        
         # Create worktree
         worktree_path = self.worktree_dir / name
-        if worktree_path.exists():
-            raise click.ClickException(f"Agent {name} already exists")
         
         print("Creating worktree...")
         result = self._run_command([
