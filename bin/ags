@@ -1,6 +1,9 @@
 #!/bin/bash
 # Agent Sandbox (ags) - Wrapper script for agent.py
 
+set -e
+set -o pipefail
+
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
