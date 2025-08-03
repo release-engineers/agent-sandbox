@@ -6,6 +6,8 @@ import json
 import subprocess
 import threading
 import time
+import tempfile
+import shutil
 from pathlib import Path
 
 import click
@@ -141,12 +143,14 @@ class AgentManager:
         # Start agent container
         print("Starting agent container...")
         
+        temp_log_dir = None
         try:
-            # Create log file in worktree
-            log_dir = worktree_path / "var" / "log"
-            log_dir.mkdir(parents=True, exist_ok=True)
+            # Create log directory in a temporary location on the host
+            temp_log_dir = tempfile.mkdtemp(prefix=f"ags-{name}-logs-")
+            log_dir = Path(temp_log_dir)
             log_file = log_dir / "ags.log"
             log_file.touch()
+            print(f"Log directory created at: {log_dir}")
             
             # Create and start container to properly stream output
             container = self.docker.containers.create(
@@ -205,6 +209,11 @@ class AgentManager:
             
         except Exception as e:
             print(f"Agent failed: {e}")
+        finally:
+            # Clean up temporary log directory
+            if temp_log_dir and Path(temp_log_dir).exists():
+                print(f"Cleaning up temporary log directory: {temp_log_dir}")
+                shutil.rmtree(temp_log_dir)
             
         # Now clean up and commit changes
         self._cleanup_and_commit(name)
