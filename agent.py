@@ -47,9 +47,11 @@ class AgentManager:
             raise click.ClickException(f"Agent {name} already exists")
         
         print("Creating worktree...")
-        self._run_command([
+        result = self._run_command([
             "git", "worktree", "add", str(worktree_path), "-b", f"agent--{name}"
         ])
+        if result.returncode != 0:
+            raise click.ClickException(f"Failed to create worktree: {result.stderr}")
         
         # Setup Claude settings
         claude_dir = worktree_path / ".claude"
@@ -109,11 +111,10 @@ class AgentManager:
         
         # Start agent container
         print("Starting agent container...")
-        print("-" * 50)
         
         try:
-            # Run container in detached mode to stream logs
-            container = self.docker.containers.run(
+            # Create and start container to properly stream output
+            container = self.docker.containers.create(
                 "claude-code-agent",
                 name=name,
                 network="agent-network",
@@ -128,32 +129,25 @@ class AgentManager:
                 },
                 working_dir="/workspace",
                 user="node",
-                detach=True,  # Run in detached mode to stream logs
                 auto_remove=True
             )
             
-            # Stream container logs to the user
+            # Start container
+            container.start()
+            
+            # Stream logs in real-time
             for line in container.logs(stream=True, follow=True):
                 print(line.decode('utf-8', errors='ignore').rstrip())
             
-            # Wait for container to finish
+            # Wait for completion
             result = container.wait()
-            
-            print("-" * 50)
             if result['StatusCode'] == 0:
-                print(f"Agent completed successfully")
+                print("Agent completed successfully")
             else:
                 print(f"Agent failed with exit code: {result['StatusCode']}")
             
         except Exception as e:
             print(f"Agent failed: {e}")
-            # Try to get container logs if it exists
-            try:
-                failed_container = self.docker.containers.get(name)
-                print("Container logs:")
-                print(failed_container.logs().decode('utf-8', errors='ignore'))
-            except Exception as log_error:
-                print(f"Failed to retrieve container logs: {log_error}")
             
         # Now clean up and commit changes
         self._cleanup_and_commit(name)

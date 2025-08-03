@@ -1,6 +1,9 @@
 #!/bin/bash
 # Agent Sandbox Test (ags-test) - Test script for agent.py
 
+set -e
+set -o pipefail
+
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -8,6 +11,11 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 # Change to example directory and activate virtual environment
 cd "$PROJECT_DIR/example"
 source "$PROJECT_DIR/venv/bin/activate"
+
+# Clean up any existing test-fix resources before running
+echo "Cleaning up existing test-fix resources..."
+git branch -D agent--test-fix 2>/dev/null || true
+rm -rf "$PROJECT_DIR/worktrees/test-fix" 2>/dev/null || true
 
 # Run agent with simple test task
 exec "$PROJECT_DIR/agent.py" start test-fix "Write a simple hello world Go program."
