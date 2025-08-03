@@ -10,4 +10,4 @@ cd "$PROJECT_DIR/example"
 source "$PROJECT_DIR/venv/bin/activate"
 
 # Run agent with simple test task
-exec "$PROJECT_DIR/agent.py" start test-fix "Add a simple comment to main.go"
+exec "$PROJECT_DIR/agent.py" start test-fix "Write a simple hello world Go program."
