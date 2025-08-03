@@ -1,229 +1,197 @@
-# Agent Sandbox (AGS) - LLM Technical Documentation
+# Agent Sandbox (AGS) - Technical Documentation
 
-## Project Overview for LLMs
+## Overview
 
-Agent Sandbox (AGS) is a sandbox system for running Claude Code AI agents in isolated environments. This documentation provides technical details for LLMs working on or maintaining this project.
+Agent Sandbox (AGS) is a Docker-based isolation system for running Claude Code AI agents in secure, sandboxed environments. This document provides technical implementation details for AI assistants working with this codebase.
 
-**Key Point**: This system creates isolated workspaces where Claude Code agents can work safely without affecting the main codebase or accessing unauthorized resources.
+## Architecture
 
-## Core Architecture
+### Core Implementation
+- **Single-file Python application**: `agent.py` (~360 lines)
+- **Dependencies**: `click` (CLI framework), `docker` (container management)
+- **Direct subprocess calls**: Git operations handled via subprocess
+- **Docker SDK**: Container management via docker-py
 
-### Components
-1. **Agent Container**: Docker container running Claude Code CLI with restricted network access
-2. **Proxy Container**: Tinyproxy instance handling whitelisted domain access
-3. **Git Worktrees**: Isolated git branches for parallel development
-4. **Hook System**: Validation layer for all agent actions
+### Container Architecture
+1. **Agent Container** (`claude-code-agent`)
+   - Base: `node:20`
+   - Claude Code CLI installed globally
+   - Runs as non-root `node` user with sudo access
+   - Network access only through proxy
 
-### Directory Structure
-```
-agent-sandbox/
-├── hooks/                 # Validation hooks for agent actions
-├── certs/                 # SSL certificates for proxy
-├── example/               # Sample project for testing
-├── agent.py               # Python implementation
-├── requirements.txt       # Python dependencies
-├── Dockerfile.agent       # Agent container definition (Node.js 20 + Claude Code)
-├── Dockerfile.proxy       # Proxy container definition
-├── tinyproxy-whitelist    # Allowed domains list
-└── tinyproxy.conf         # Proxy configuration
-```
-
-## Key Commands
-
-### Starting an Agent
-```bash
-./agent.py start <agent-name> "<goal-description>"
-# Or if ags is in PATH:
-ags start <agent-name> "<goal-description>"
-```
-- Creates git worktree at `../worktrees/<agent-name>`
-- Launches Docker containers (agent + proxy)
-- Runs Claude Code with specified goal
-- Enforces network restrictions via proxy
-
-### Managing Agents
-```bash
-./agent.py list        # Show agent branches with committed changes
-./agent.py cleanup     # Remove all agents and worktrees
-./agent.py auth        # Authenticate with Claude Code
-# Or using ags:
-ags list               # Show agent branches with committed changes
-ags cleanup            # Remove all agents and worktrees
-ags auth               # Authenticate with Claude Code
-```
-
-## Technical Details
-
-### Agent Container (Dockerfile.agent)
-- **Base Image**: node:20
-- **Key Packages**: git, gh, vim, jq, fzf, curl, wget
-- **Claude Code**: Installed globally via npm
-- **User**: Runs as non-root 'node' user with sudo access
-- **Working Directory**: /workspace (mounted from git worktree)
-- **Environment Variables**:
-  - `CLAUDE_GOAL`: The task description for the agent
-  - `CLAUDE_CONFIG_DIR`: /home/node/.claude
-  - `NODE_OPTIONS`: --max-old-space-size=4096
+2. **Proxy Container** (`claude-code-proxy`)
+   - Base: `alpine:latest`
+   - Tinyproxy for domain whitelisting
+   - Port 3128 for HTTP/HTTPS proxy
 
 ### Network Security
-- **Default Policy**: No external network access
-- **Whitelisted Domains** (via tinyproxy-whitelist):
-  - api.anthropic.com (Claude API)
-  - github.com (Git operations)
-  - npmjs.org (Package management)
-  - Additional domains as needed
-- **Proxy Certificate**: Self-signed cert at /usr/local/share/ca-certificates/proxy.crt
+- **Isolated network**: `agent-network` Docker network
+- **Proxy enforcement**: All traffic routes through tinyproxy
+- **Whitelisted domains** (tinyproxy-whitelist):
+  - api.anthropic.com
+  - docs.anthropic.com
+  - statsig.anthropic.com
+  - sentry.io
+  - github.com
+  - objects.githubusercontent.com
+  - raw.githubusercontent.com
 
-### Git Worktree Isolation
-- Each agent gets isolated worktree: `../worktrees/<agent-name>`
-- Branches from current HEAD
-- No interference between agents
-- Easy cleanup and integration
+## Key Classes and Methods
 
-### Hook System
-- Location: `/hooks/` directory in container
-- Purpose: Validate and control agent actions
-- Execution: Automatic via Claude Code hooks configuration
+### AgentManager Class
+Main orchestration class with the following methods:
 
-## Security Constraints
-
-1. **Network Isolation**: Agents cannot access arbitrary external resources
-2. **Domain Whitelisting**: Only pre-approved domains accessible
-3. **File System Isolation**: Agents work only in their worktree
-4. **Goal Scoping**: Each agent has specific, limited objective
-5. **Hook Validation**: All actions pass through validation layer
-
-## Usage Patterns
-
-### Single Feature Development
-```bash
-./agent.py start auth-feature "Implement JWT authentication"
-# Or: ags start auth-feature "Implement JWT authentication"
-```
-
-### Parallel Development
-```bash
-./agent.py start ui-update "Modernize dashboard UI"
-./agent.py start api-docs "Generate OpenAPI documentation"
-./agent.py start test-coverage "Add unit tests for user service"
-# Or using ags:
-ags start ui-update "Modernize dashboard UI"
-ags start api-docs "Generate OpenAPI documentation"
-ags start test-coverage "Add unit tests for user service"
-```
-
-### Code Review Tasks
-```bash
-./agent.py start security-review "Review code for security vulnerabilities"
-# Or: ags start security-review "Review code for security vulnerabilities"
-```
-
-## Important Notes for LLMs
-
-1. **Always use relative paths** within the worktree
-2. **Network requests** must go through proxy (automatic via container setup)
-3. **Git operations** are isolated to the worktree branch
-4. **External tools** availability depends on Dockerfile.agent configuration
-5. **Environment variables** from host are not passed unless explicitly configured
-
-## Troubleshooting
-
-### Common Issues
-- **Network errors**: Check if domain is in tinyproxy-whitelist
-- **Permission errors**: Ensure proper ownership of worktree files
-- **Container failures**: Check Docker logs via `docker logs <agent-name>`
-- **Git conflicts**: Resolve in worktree before merging
-
-### Debug Commands
-```bash
-# View agent logs
-docker logs <agent-name>
-
-# Access agent container
-docker exec -it <agent-name> /bin/bash
-
-# Check proxy logs
-docker logs proxy-<agent-name>
-```
-
-## Integration Points
-
-- **Main Branch**: Agents work on separate branches, merge via PR
-- **CI/CD**: Can trigger agents for automated tasks
-- **Code Review**: Agents can be spawned for review tasks
-- **Testing**: Isolated environment perfect for testing changes
-
-## Best Practices
-
-1. **Clear Goals**: Provide specific, actionable goals to agents
-2. **Resource Limits**: Monitor container resource usage
-3. **Regular Cleanup**: Remove unused worktrees and containers
-4. **Domain Management**: Keep whitelist minimal and secure
-5. **Hook Validation**: Implement strict validation in hooks
-
-This system enables safe, parallel AI development with strong isolation and security boundaries.
-
-## Implementation Details
-
-The system is implemented as a single Python file (`agent.py`) with the following key characteristics:
-
-### Architecture
-- **Single-file design**: All functionality in one ~250-line Python script
-- **Simple dependencies**: Only `click` (CLI) and `docker` (container management)
-- **Direct approach**: Uses subprocess for git operations, docker-py for containers
-
-### Key Classes and Functions
-- `AgentManager`: Main class handling all operations
-- `start_agent()`: Creates worktree, runs agent, commits changes, and cleans up
-- `list_agents()`: Shows agent branches with committed changes
+- `__init__()`: Initializes Docker client, sets up paths
+- `start_agent(name, goal)`: Main workflow orchestrator
+- `_cleanup_existing_agent(name)`: Removes existing resources
+- `_cleanup_and_commit(name)`: Commits changes and cleans up
+- `list_agents()`: Shows agent branches
+- `stop_agent(name)`: Backward compatibility wrapper
 - `cleanup_all()`: Removes all agents and resources
-- `_cleanup_and_commit()`: Internal method for cleanup and git operations
+- `auth()`: Runs Claude Code authentication
 
-### Container Management
-- **Agent containers**: Use `claude-code-agent` image with Claude Code CLI
-- **Proxy containers**: Use `claude-code-proxy` image with tinyproxy
-- **Network isolation**: All containers run on `agent-network`
-- **Volume mounts**: Worktree mounted to `/workspace`, credentials to `/home/node/.claude`
+### Workflow Sequence
+1. **Cleanup**: Remove any existing agent with same name
+2. **Git Worktree**: Create at `../worktrees/<name>` with branch `agent--<name>`
+3. **Claude Settings**: Generate `.claude/settings.json` with hooks
+4. **Build Images**: Build both Docker images
+5. **Start Proxy**: Launch proxy container first
+6. **Run Agent**: Execute Claude Code with goal, stream output
+7. **Commit & Cleanup**: Stage all changes, commit, remove worktree
 
-### Git Operations
-- **Worktrees**: Created in `../worktrees/<agent-name>`
-- **Branches**: Named `agent--<name>` 
-- **Isolation**: Each agent gets its own branch and workspace
-- **Commit Process**: Changes are automatically committed to `agent--<name>` branch on completion
-- **Cleanup**: Worktrees are removed, branches remain with committed changes
-- **Exclusions**: .claude/ folders are excluded from commits via .gitignore
+## File Structure
 
-### Configuration Management
-- **Claude settings**: Generated in `.claude/settings.json` within each worktree
-- **Hooks**: Pre-configured validation hooks for security
-- **Environment**: Proxy settings automatically configured
-
-## LLM Development Guidelines
-
-### When Working on This Project
-1. **Maintain simplicity**: The Python implementation should remain simple and readable
-2. **Test thoroughly**: Always test container operations and git worktree management
-3. **Handle errors gracefully**: Docker and git operations can fail, handle appropriately
-4. **Preserve security**: Don't weaken network isolation or hook validation
-5. **Document changes**: Update both README.md and CLAUDE.md
-6. **Protect .claude/**: Ensure .claude/ folders remain in .gitignore
-
-### Common Maintenance Tasks
-- **Adding new domains**: Update `tinyproxy-whitelist` file
-- **Modifying hooks**: Edit files in `hooks/` directory
-- **Container updates**: Modify `Dockerfile.agent` or `Dockerfile.proxy`
-- **Python updates**: Modify `agent.py` and update `requirements.txt`
-
-### Testing Approach
-```bash
-# Test from example directory
-cd example/
-source ../venv/bin/activate
-../agent.py start test "Simple test task"
-../agent.py list
-../agent.py stop test
-# Or if ags is in PATH:
-ags start test "Simple test task"
-ags list
-ags stop test
 ```
+agent-sandbox/
+├── agent.py               # Main implementation
+├── requirements.txt       # Python dependencies (click, docker)
+├── bin/
+│   ├── ags               # Wrapper script for PATH usage
+│   └── ags-test          # Test script for example/
+├── hooks/                 # Validation hooks
+│   ├── pre-bash          # Validates bash commands
+│   ├── pre-writes        # Validates file writes
+│   ├── post-writes       # Post-write actions
+│   └── post-stop         # Cleanup on stop
+├── certs/
+│   └── proxy.crt         # Self-signed cert for proxy
+├── Dockerfile.agent       # Agent container definition
+├── Dockerfile.proxy       # Proxy container definition
+├── tinyproxy.conf        # Proxy configuration
+├── tinyproxy-whitelist   # Allowed domains
+└── example/              # Test project
+```
+
+## Docker Configuration
+
+### Agent Container (`Dockerfile.agent`)
+- **Packages**: git, gh, vim, jq, fzf, curl, wget, less, procps, sudo, zsh, unzip
+- **Node.js**: Version 20 with increased memory (4096MB)
+- **Claude Code**: Installed globally via npm
+- **Volumes**:
+  - Worktree mounted at `/workspace`
+  - Credentials at `/home/node/.claude`
+- **Environment**:
+  - `CLAUDE_GOAL`: Task description
+  - `CLAUDE_CONFIG_DIR`: /home/node/.claude
+  - `NODE_OPTIONS`: --max-old-space-size=4096
+- **Command**: `claude -p "$CLAUDE_GOAL" --dangerously-skip-permissions`
+
+### Proxy Container (`Dockerfile.proxy`)
+- **Base**: Alpine Linux (minimal)
+- **Service**: Tinyproxy on port 3128
+- **Configuration**: Custom whitelist and config files
+
+## Git Management
+
+### Worktree Handling
+- **Location**: `../worktrees/<name>` (parent directory)
+- **Branch naming**: `agent--<name>`
+- **Isolation**: Each agent gets separate worktree
+- **Cleanup**: Worktree removed after commit
+
+### Commit Process
+- **Automatic staging**: `git add .` in worktree
+- **Commit message**: "Agent {name} changes\n\nAutomatically committed by agent-process"
+- **Branch persistence**: Branch remains after worktree removal
+- **Exclusions**: `.claude/` folders excluded via .gitignore
+
+## Hook System
+
+### Configuration (in `.claude/settings.json`)
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {"matcher": "Bash", "hooks": [{"type": "command", "command": "/hooks/pre-bash"}]},
+      {"matcher": "Write|Edit|MultiEdit", "hooks": [{"type": "command", "command": "/hooks/pre-writes"}]}
+    ],
+    "PostToolUse": [
+      {"matcher": "Write|Edit|MultiEdit", "hooks": [{"type": "command", "command": "/hooks/post-writes"}]}
+    ],
+    "Stop": [
+      {"matcher": ".*", "hooks": [{"type": "command", "command": "/hooks/stop"}]}
+    ]
+  },
+  "tools": {"computer_use": {"enabled": false}}
+}
+```
+
+## CLI Commands
+
+### Primary Commands
+- `ags start <name> "<goal>"`: Create and run agent
+- `ags list`: Show agent branches
+- `ags stop <name>`: Stop agent (backward compatibility)
+- `ags cleanup`: Remove all agents and resources
+- `ags auth`: Authenticate with Claude Code
+
+### Implementation Details
+- **Click framework**: Command-line interface
+- **Error handling**: ClickException for user-friendly errors
+- **Real-time output**: Streams container logs to terminal
+- **Exit codes**: Proper status code handling
+
+## Resource Management
+
+### Container Lifecycle
+- **Auto-removal**: Containers set with `auto_remove=True`
+- **Graceful shutdown**: Stop containers before removal
+- **Network cleanup**: Remove `agent-network` when done
+
+### Volume Management
+- **Credentials volume**: `claude-code-credentials` (persistent)
+- **Worktree mount**: Temporary, removed after agent completes
+
+## Error Handling
+
+### Common Scenarios
+- **Docker not running**: Exit with error message
+- **Git worktree conflicts**: Force removal of existing
+- **Branch conflicts**: Delete existing branch before creating
+- **Container failures**: Catch and display errors
+
+## Security Considerations
+
+1. **Network isolation**: Default deny, explicit allow via proxy
+2. **File system boundaries**: Agent confined to worktree
+3. **Credential isolation**: Separate volume for Claude credentials
+4. **Hook validation**: All actions pass through hooks
+5. **No direct internet**: Everything through proxy whitelist
+
+## Testing
+
+### Test Script (`bin/ags-test`)
+- Changes to `example/` directory
+- Cleans up existing test resources
+- Runs simple "hello world" Go program task
+- Useful for validation and debugging
+
+## Best Practices for Development
+
+1. **Maintain simplicity**: Keep agent.py readable and direct
+2. **Test Docker operations**: Container and network management
+3. **Handle edge cases**: Git conflicts, Docker failures
+4. **Preserve security**: Don't bypass proxy or hooks
+5. **Stream output**: Users need real-time feedback
+6. **Clean up resources**: Always remove containers and worktrees

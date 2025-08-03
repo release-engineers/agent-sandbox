@@ -1,14 +1,14 @@
-# Agent Sandbox (AGS) - Sandbox for AI Coding Agents
+# Agent Sandbox (AGS)
 
-A sandbox for running Claude Code AI agents in isolated environments.
+Run Claude Code AI agents in isolated Docker containers with network restrictions and git worktree isolation.
 
 ## What It Does
 
-Creates **isolated workspaces** where each Claude Code agent:
-- Gets its own git worktree (parallel development branch)
-- Runs in a Docker container with network restrictions  
-- Has a specific goal to accomplish
-- Can only access whitelisted external domains through a proxy
+AGS creates secure, isolated environments for Claude Code agents to:
+- Work in separate git worktrees with dedicated branches
+- Run inside Docker containers with network whitelisting
+- Execute specific tasks without affecting your main codebase
+- Automatically commit their changes to feature branches
 
 ## Quick Start
 
@@ -16,82 +16,153 @@ Creates **isolated workspaces** where each Claude Code agent:
 - Python 3.9+
 - Docker running
 - Git repository
-- A Claude Code subscription
+- Claude Code subscription
 
 ### Installation
 
 ```bash
-# Install dependencies
+# Clone and setup
+git clone https://github.com/anthropics/agent-sandbox.git
+cd agent-sandbox
+
+# Create virtual environment
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-# Add bin/ to PATH for easier access
+# Optional: Add to PATH
 export PATH="$(pwd)/bin:$PATH"
-# Or add to ~/.bashrc or ~/.zshrc:
-# export PATH="/path/to/agent-sandbox/bin:$PATH"
 ```
 
-### Usage
+### Basic Usage
 
 ```bash
-# Run an AI agent with a specific goal
-ags start feature-name "Add user authentication to the login page"
+# Authenticate Claude Code (first time only)
+ags auth
 
-# List agent branches (with committed changes)
+# Start an agent
+ags start feature-x "Add authentication to the user API"
+
+# List agent branches
 ags list
 
-# Clean up everything
+# Stop a running agent (if needed)
+ags stop feature-x
+
+# Clean up all agents
 ags cleanup
-
-# Authenticate with Claude Code (run once)
-ags auth
-```
-
-### Example
-```bash
-cd example/
-ags start docs "Add documentation to the main.go file"
-# Agent runs, shows output, commits changes, and exits
 ```
 
 ## How It Works
 
-1. **Creates isolated git worktree** in `../worktrees/<name>` with branch `agent--<name>`
-2. **Launches secure containers** (agent + proxy) with network restrictions
-3. **Runs Claude Code CLI** with your specified goal, streaming output
-4. **Validates all actions** through hook system
-5. **Commits changes** to branch `agent--<name>` and cleans up when complete (excluding .claude configuration)
+1. **Creates Git Worktree**: Isolated workspace at `../worktrees/<name>`
+2. **Builds Docker Images**: Agent container + proxy container
+3. **Configures Security**: Sets up hooks and network restrictions
+4. **Runs Claude Code**: Executes with your goal, streams output
+5. **Commits Changes**: Automatically commits to `agent--<name>` branch
+
+## Architecture
+
+```
+┌─────────────────┐     ┌──────────────────┐
+│  Agent Container│────▶│  Proxy Container │────▶ Whitelisted
+│  (Claude Code)  │     │   (Tinyproxy)    │     Domains Only
+└─────────────────┘     └──────────────────┘
+         │
+         ▼
+   Git Worktree
+  (../worktrees/name)
+```
 
 ## Security Features
 
-- **Network Isolation**: Agents can't access arbitrary external resources
-- **Domain Whitelisting**: Only approved domains accessible (Anthropic API, GitHub, etc.)
-- **Hook Validation**: All agent actions go through validation hooks
-- **Goal-Scoped Execution**: Each agent has a specific, limited objective
+- **Network Isolation**: All traffic goes through proxy
+- **Domain Whitelisting**: Only approved domains (GitHub, Anthropic API, etc.)
+- **File System Isolation**: Agents confined to their worktree
+- **Hook Validation**: Pre/post action validation
+- **No Host Access**: Containers can't access host system
 
-## Use Cases
+## Commands
 
-- **Parallel Development**: Run multiple agents on different features simultaneously
-- **Safe AI Development**: Let AI agents work on code with security constraints
-- **Experimentation**: Test AI agents on code changes without affecting main branch
-- **Code Review**: Have agents work on specific review tasks in isolation
+| Command | Description |
+|---------|-------------|
+| `ags start <name> "<goal>"` | Start new agent with goal |
+| `ags list` | Show agent branches |
+| `ags stop <name>` | Stop running agent |
+| `ags cleanup` | Remove all agents |
+| `ags auth` | Authenticate Claude Code |
 
-## Directory Structure
+## Examples
+
+```bash
+# Add tests to a module
+ags start add-tests "Write unit tests for the auth module"
+
+# Fix a bug
+ags start fix-bug "Fix the memory leak in the worker process"
+
+# Refactor code
+ags start refactor "Refactor database queries to use prepared statements"
+
+# Multiple agents in parallel
+ags start frontend "Update React components to use hooks"
+ags start backend "Add rate limiting to API endpoints"
+ags start docs "Generate API documentation"
+```
+
+## Configuration
+
+### Whitelisted Domains
+Edit `tinyproxy-whitelist` to add domains:
+```
+api.anthropic.com
+github.com
+npmjs.org
+# Add your domains here
+```
+
+### Hooks
+Validation hooks in `hooks/`:
+- `pre-bash`: Validate shell commands
+- `pre-writes`: Validate file modifications
+- `post-writes`: After file changes
+- `post-stop`: Cleanup actions
+
+## Troubleshooting
+
+```bash
+# View agent logs
+docker logs <agent-name>
+
+# Access container
+docker exec -it <agent-name> /bin/bash
+
+# Check proxy logs
+docker logs proxy-<agent-name>
+
+# Force cleanup
+docker stop $(docker ps -q --filter "label=ags")
+ags cleanup
+```
+
+## Project Structure
 
 ```
 agent-sandbox/
-├── agent.py               # Main Python implementation
-├── requirements.txt       # Python dependencies
-├── .gitignore             # Excludes .claude/ and worktrees/
-├── hooks/                 # Validation hooks
-├── certs/                 # SSL certificates for proxy
-├── example/               # Sample project
-├── Dockerfile.agent       # Agent container
+├── agent.py               # Main Python script
+├── requirements.txt       # Dependencies (click, docker)
+├── bin/
+│   ├── ags               # CLI wrapper
+│   └── ags-test          # Test script
+├── hooks/                 # Validation scripts
+├── certs/                 # SSL certificates
+├── Dockerfile.agent       # Claude Code container
 ├── Dockerfile.proxy       # Proxy container
 ├── tinyproxy-whitelist    # Allowed domains
-└── tinyproxy.conf         # Proxy configuration
+└── example/              # Sample project
 ```
 
-Agent Sandbox (AGS) is essentially a **"sandbox for AI coding agents"** - letting you safely run multiple Claude Code instances on different tasks with security guardrails and isolation.
+## License
+
+MIT License - see LICENSE file for details.
 
