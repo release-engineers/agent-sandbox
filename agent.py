@@ -96,7 +96,7 @@ class AgentManager:
             name=f"proxy-{name}",
             network="agent-network",
             detach=True,
-            auto_remove=False
+            auto_remove=True
         )
         
         # Start agent container
@@ -120,7 +120,7 @@ class AgentManager:
                 working_dir="/workspace",
                 user="node",
                 detach=False,  # Run synchronously
-                auto_remove=False,
+                auto_remove=True,
                 stdout=True,
                 stderr=True
             )
@@ -138,14 +138,14 @@ class AgentManager:
         """Clean up containers and commit changes."""
         print("Cleaning up and committing changes...")
         
-        # Stop containers
+        # Stop containers (they may already be removed due to auto_remove=True)
         for container_name in [name, f"proxy-{name}"]:
             try:
                 container = self.docker.containers.get(container_name)
                 container.stop()
-                container.remove()
                 print(f"Stopped {container_name}")
             except docker.errors.NotFound:
+                # Container already removed (auto_remove=True)
                 pass
         
         # Handle worktree changes
