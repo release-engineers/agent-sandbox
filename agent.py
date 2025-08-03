@@ -112,7 +112,8 @@ class AgentManager:
         print("-" * 50)
         
         try:
-            agent = self.docker.containers.run(
+            # Run container in detached mode to stream logs
+            container = self.docker.containers.run(
                 "claude-code-agent",
                 name=name,
                 network="agent-network",
@@ -127,17 +128,32 @@ class AgentManager:
                 },
                 working_dir="/workspace",
                 user="node",
-                detach=False,  # Run synchronously
-                auto_remove=True,
-                stdout=True,
-                stderr=True
+                detach=True,  # Run in detached mode to stream logs
+                auto_remove=True
             )
             
+            # Stream container logs to the user
+            for line in container.logs(stream=True, follow=True):
+                print(line.decode('utf-8', errors='ignore').rstrip())
+            
+            # Wait for container to finish
+            result = container.wait()
+            
             print("-" * 50)
-            print(f"Agent completed successfully")
+            if result['StatusCode'] == 0:
+                print(f"Agent completed successfully")
+            else:
+                print(f"Agent failed with exit code: {result['StatusCode']}")
             
         except Exception as e:
             print(f"Agent failed: {e}")
+            # Try to get container logs if it exists
+            try:
+                failed_container = self.docker.containers.get(name)
+                print("Container logs:")
+                print(failed_container.logs().decode('utf-8', errors='ignore'))
+            except:
+                pass
             
         # Now clean up and commit changes
         self._cleanup_and_commit(name)
