@@ -152,8 +152,8 @@ class AgentManager:
                 failed_container = self.docker.containers.get(name)
                 print("Container logs:")
                 print(failed_container.logs().decode('utf-8', errors='ignore'))
-            except:
-                pass
+            except Exception as log_error:
+                print(f"Failed to retrieve container logs: {log_error}")
             
         # Now clean up and commit changes
         self._cleanup_and_commit(name)
