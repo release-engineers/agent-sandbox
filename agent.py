@@ -96,8 +96,7 @@ class AgentManager:
                 "Stop": [
                     {"matcher": ".*", "hooks": [{"type": "command", "command": "/hooks/stop"}]}
                 ]
-            },
-            "tools": {"computer_use": {"enabled": False}}
+            }
         }
         
         with open(claude_dir / "settings.json", "w") as f:
