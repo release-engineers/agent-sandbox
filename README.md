@@ -1,6 +1,6 @@
 # Agent Sandbox
 
-`agent-sandbox` runs a sandbox for AI agents like Claude; containers with their own copy of your working directory, each with a dedicated Docker network and proxy to limit access to the internet. When an agent exits, a `git diff` of its changes is written to your original working directory.
+`agent-sandbox` makes it easy to sandbox agents like Claude. These sandboxes are containers each with their own copy of your working directory, a dedicated Docker network and HTTP(S) proxy to limit access to the internet. When an agent completes, it yields a `.patch` file of its changes to your original working directory.
 
 ```bash
 cd fastapi-project
@@ -26,23 +26,25 @@ cat *.patch
 # (...)
 ```
 
-When using specifically `claude` with `--print`, be aware that it does not stream output and may appear to hang.
+> [!WARNING]  
+> When using `claude` with `--print`, be aware that it does not stream output and until Claude fully completes it will appear to hang.
 
-## Features
+## Requirements
 
-- **Isolated Environment**: Each sandbox runs in its own Docker container with dedicated network
-- **Copy-on-Write Workspace**: Creates a temporary copy of your current directory  
-- **Interactive Shell**: Bash shell with development tools and [Claude Code pre-installed](Dockerfile.agent)
-- **Automatic Diff Generation**: Generates a patch file of all changes when you exit
-- **Network Isolation**: Each sandbox gets its own network and [proxy container](Dockerfile.proxy)
-- **Network Whitelist**: Only allow access to [whitelisted domains](tinyproxy-whitelist)
-- **Hook Support**: Mounts validation [hooks for Claude Code](hooks/)
+- Python 3.8+
+- Docker
+- Git
+- Claude CLI JSON (`~/.claude.json` must exist)
 
 ## Installation
 
 ```bash
 # Add to your PATH
 export PATH=$PATH:/path/to/agent-sandbox/bin
+
+# Set up the authentication volume by running an interactive sandbox
+agent-sandbox
+# > claude
 ```
 
 ## Usage
@@ -60,21 +62,14 @@ export PATH=$PATH:/path/to/agent-sandbox/bin
 #   --help            Show this message and exit.
 ```
 
-## Applying Changes
+Generated patch files are named `sandbox-diff-<timestamp>.patch`, and can be applied to your original working directory with `git apply`.
 
-The sandbox generates a diff of all changes (including new files) when you exit, respecting `.gitignore` rules.
+## Features
 
-```bash
-# Review the diff
-cat sandbox-diff-*.patch
-
-# Apply the patch
-git apply sandbox-diff-*.patch
-```
-
-## Requirements
-
-- Python 3.8+
-- Docker
-- Git
-- Claude CLI JSON (`~/.claude.json` must exist)
+- **Isolated Environment**: Each sandbox runs in its own Docker container with dedicated network
+- **Copy-on-Write Workspace**: Creates a temporary copy of your current directory  
+- **Interactive Shell**: Bash shell with development tools and [Claude Code pre-installed](Dockerfile.agent)
+- **Automatic Diff Generation**: Generates a patch file of all changes when you exit
+- **Network Isolation**: Each sandbox gets its own network and [proxy container](Dockerfile.proxy)
+- **Network Whitelist**: Only allow access to [whitelisted domains](tinyproxy-whitelist)
+- **Hook Support**: Mounts validation [hooks for Claude Code](hooks/)
