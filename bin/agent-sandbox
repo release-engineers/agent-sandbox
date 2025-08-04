@@ -1,24 +1,9 @@
 #!/usr/bin/env bash
 
-# Get the directory where this script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 
-# Create venv if it doesn't exist
-if [ ! -d "$PROJECT_ROOT/venv" ]; then
-    echo "Creating virtual environment..."
-    python3 -m venv "$PROJECT_ROOT/venv"
-fi
-
-# Launch a subshell
 (
-    # Activate the virtual environment
     source "$PROJECT_ROOT/venv/bin/activate"
-    
-    # Install requirements
-    echo "Installing requirements..."
-    pip install -q -r "$PROJECT_ROOT/requirements.txt"
-    
-    # Run the Python sandbox with all arguments passed through
     exec python3 "$PROJECT_ROOT/src/sandbox.py" "$@"
 )
