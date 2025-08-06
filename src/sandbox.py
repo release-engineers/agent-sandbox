@@ -77,20 +77,20 @@ class AgentSandbox:
         """Build required Docker images."""
         
         # Build agent image
-        self.docker_client.images.build(
-            path=str(self.project_root),
-            dockerfile="Dockerfile.agent",
-            tag="claude-code-agent:latest",
-            rm=True
-        )
+        subprocess.run([
+            "docker", "build",
+            "-f", str(self.project_root / "Dockerfile.agent"),
+            "-t", "sandbox-agent:latest",
+            str(self.project_root)
+        ], check=True)
         
         # Build proxy image
-        self.docker_client.images.build(
-            path=str(self.project_root),
-            dockerfile="Dockerfile.proxy",
-            tag="claude-code-proxy:latest",
-            rm=True
-        )
+        subprocess.run([
+            "docker", "build",
+            "-f", str(self.project_root / "Dockerfile.proxy"),
+            "-t", "sandbox-proxy:latest",
+            str(self.project_root)
+        ], check=True)
     
     def ensure_network(self):
         """Create the Docker network."""
@@ -100,7 +100,7 @@ class AgentSandbox:
         """Start the proxy container."""
         
         proxy_container = self.docker_client.containers.run(
-            "claude-code-proxy:latest",
+            "sandbox-proxy:latest",
             name=self.proxy_container_name,
             network=self.network_name,
             detach=True,
@@ -111,10 +111,6 @@ class AgentSandbox:
     
     def run_container(self, workspace_path, command=None, interactive=True):
         """Run a container with optional command and interactive mode."""
-        # Create persistent volume for Claude Code credentials
-        subprocess.run(["docker", "volume", "create", "claude-code-credentials"], 
-                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        
         # Build command to run container
         hooks_dir = self.project_root / "hooks"
         docker_cmd = [
@@ -123,9 +119,8 @@ class AgentSandbox:
             "--name", f"agent-sandbox-{self.sandbox_name}",
             "--volume", f"{workspace_path}:/workspace",
             "--volume", f"{hooks_dir}:/hooks:ro",
-            "--volume", "claude-code-credentials:/home/node/.claude",
+            "--volume", "claude-code-credentials:/root/.claude",
             "--workdir", "/workspace",
-            "--user", "node",
             "--network", self.network_name,
             "--env", f"http_proxy=http://{self.proxy_container_name}:3128",
             "--env", f"https_proxy=http://{self.proxy_container_name}:3128",
@@ -137,15 +132,15 @@ class AgentSandbox:
         # Mount host's .claude.json (required)
         host_claude_json = Path.home() / ".claude.json"
         if not host_claude_json.exists():
-            raise FileNotFoundError(f"Claude configuration not found at {host_claude_json}. Please run 'claude auth' first.")
-        docker_cmd.extend(["--volume", f"{host_claude_json}:/home/node/.claude.json"])
+            raise FileNotFoundError(f"Claude configuration not found at {host_claude_json}. Please run 'claude' first.")
+        docker_cmd.extend(["--volume", f"{host_claude_json}:/root/.claude.json"])
         
         # Add interactive and tty flags if needed
         if interactive:
             docker_cmd.extend(["--interactive", "--tty"])
         
         # Add the image
-        docker_cmd.append("claude-code-agent:latest")
+        docker_cmd.append("sandbox-agent:latest")
         
         # Add command to run
         if command:
@@ -156,7 +151,7 @@ class AgentSandbox:
             docker_cmd.append("/bin/bash")
         
         # Run container
-        subprocess.run(docker_cmd)
+        subprocess.run(docker_cmd, check=True)
     
     def generate_diff(self, workspace_path):
         """Generate diff between original and modified workspace."""
@@ -220,7 +215,7 @@ class AgentSandbox:
         
         with progress:
             # Startup progress
-            startup_task = progress.add_task("Starting agent sandbox...", total=4)
+            startup_task = progress.add_task("Starting agent sandbox...", total=5)
             
             try:
                 # Build images if needed
@@ -235,13 +230,17 @@ class AgentSandbox:
                 progress.update(startup_task, description="Setting up Claude configuration...", completed=2)
                 self.setup_claude_settings(workspace_path)
                 
+                # Create persistent volume for Claude Code credentials
+                progress.update(startup_task, description="Creating credentials volume...", completed=3)
+                subprocess.run(["docker", "volume", "create", "claude-code-credentials"], check=True)
+                
                 # Ensure network and start proxy
-                progress.update(startup_task, description="Creating network and proxy...", completed=3)
+                progress.update(startup_task, description="Creating network and proxy...", completed=4)
                 self.ensure_network()
                 self.start_proxy_container()
                 
                 # Complete startup
-                progress.update(startup_task, description="✓ Sandbox ready", completed=4)
+                progress.update(startup_task, description="✓ Sandbox ready", completed=5)
                 progress.stop()
                 
                 # Clear and show ready message
@@ -289,7 +288,6 @@ class AgentSandbox:
                 self.cleanup()
                 raise
 
-
 @click.command()
 @click.argument('command', nargs=-1)
 @click.option('--noninteractive', is_flag=True, help='Run without interactive TTY')
@@ -308,4 +306,4 @@ def sandbox(command, noninteractive):
 
 
 if __name__ == "__main__":
-    sandbox()
+    sandbox(prog_name='agent-sandbox')

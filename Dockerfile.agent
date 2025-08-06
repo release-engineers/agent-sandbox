@@ -1,9 +1,10 @@
-FROM node:20
+FROM ubuntu:22.04
 
 ENV TZ="Europe/Amsterdam"
 
-# Install basic development tools
-RUN apt update && apt install -y \
+RUN apt update
+
+RUN apt install -y \
     less \
     git \
     procps \
@@ -17,29 +18,24 @@ RUN apt update && apt install -y \
     vim \
     jq \
     golang-go \
-    && apt clean \
-    && rm -rf /var/lib/apt/lists/*
+    ca-certificates \
+    gnupg \
+    lsb-release \
+    python3.10-venv
 
-# Ensure default node user has access to /usr/local/share
-RUN mkdir -p /usr/local/share/npm-global && \
-    chown -R node:node /usr/local/share
-
-# Add node user to sudoers
-RUN echo "node ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
-
+# Install Node.js 20
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && apt-get install -y nodejs
 
 # Set environment variables
 ENV NODE_OPTIONS="--max-old-space-size=4096"
-ENV CLAUDE_CONFIG_DIR="/home/node/.claude"
+ENV CLAUDE_CONFIG_DIR="/root/.claude"
 
 # Create workspace and config directories
-RUN mkdir -p /workspace /home/node/.claude /hooks /var/log && \
-    chown -R node:node /workspace /home/node/.claude /hooks && \
+RUN mkdir -p /workspace /root/.claude /hooks /var/log && \
     chmod 777 /var/log
 
 # Copy hook scripts
 COPY hooks/ /hooks/
-RUN chmod +x /hooks/*
 
 # Setup certificate handling for proxy
 RUN mkdir -p /usr/local/share/ca-certificates
@@ -50,16 +46,6 @@ COPY certs/proxy.crt /usr/local/share/ca-certificates/proxy.crt
 # Update CA certificates to include proxy certificate
 RUN update-ca-certificates
 
-# Copy the agent-specific gitignore file
-COPY agent-gitignore /home/node/.gitignore_global
-
-# Configure git to use the global gitignore for the node user
-RUN git config --global core.excludesfile /home/node/.gitignore_global && \
-    chown node:node /home/node/.gitignore_global
-
-# Set up non-root user
-USER node
-
 # Install global packages
 ENV NPM_CONFIG_PREFIX=/usr/local/share/npm-global
 ENV PATH=$PATH:/usr/local/share/npm-global/bin
@@ -67,10 +53,10 @@ ENV PATH=$PATH:/usr/local/share/npm-global/bin
 # Install Claude Code CLI
 RUN npm install -g @anthropic-ai/claude-code
 
-# Add Context7 MCP
-RUN claude mcp add context7 -- npx -y @upstash/context7-mcp@latest
-
 WORKDIR /workspace
+
+# Let Claude Code know it's a sandbox and running as root is OK
+ENV IS_SANDBOX=1
 
 # Default to bash shell for interactive use
 CMD ["/bin/bash"]
