@@ -59,10 +59,23 @@ agent-sandbox
 #
 # Options:
 #   --noninteractive  Run without interactive TTY
+#   --allow DOMAIN    Allow additional domain through proxy (can be used multiple times)
 #   --help            Show this message and exit.
 ```
 
 Generated patch files are named `sandbox-diff-<timestamp>.patch`, and can be applied to your original working directory with `git apply`.
+
+### Extending Proxy Whitelist
+
+By default, the sandbox proxy only allows connections to [whitelisted domains](tinyproxy-whitelist). You can extend this whitelist using the `--allow` option:
+
+```bash
+# Allow google.com in addition to defaults
+agent-sandbox --allow google.com -- claude "help me with my code"
+
+# Allow multiple additional domains
+agent-sandbox --allow google.com --allow stackoverflow.com -- python script.py
+```
 
 ## Features
 
