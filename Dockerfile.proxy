@@ -3,13 +3,17 @@ FROM alpine:latest
 # Install tinyproxy
 RUN apk add --no-cache tinyproxy
 
-# Copy tinyproxy configuration
+# Copy tinyproxy configuration and whitelist
 COPY tinyproxy.conf /etc/tinyproxy/tinyproxy.conf
-COPY tinyproxy-whitelist /etc/tinyproxy/whitelist
+COPY tinyproxy-whitelist /etc/tinyproxy/whitelist.default
+
+# Copy and set up entrypoint script
+COPY proxy-entrypoint.sh /usr/local/bin/proxy-entrypoint.sh
+RUN chmod +x /usr/local/bin/proxy-entrypoint.sh
 
 # Create directory for PID file
 RUN mkdir -p /var/run/tinyproxy
 
 EXPOSE 3128
 
-CMD ["tinyproxy", "-d"]
+ENTRYPOINT ["/usr/local/bin/proxy-entrypoint.sh"]

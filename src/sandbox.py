@@ -15,7 +15,7 @@ import click
 class AgentSandbox:
     """Manages interactive sandbox environments with copy-on-write workspaces."""
     
-    def __init__(self, command=None, interactive=True):
+    def __init__(self, command=None, interactive=True, allowed_domains=None):
         self.console = Console()
         self.docker_client = docker.from_env()
         self.cwd = Path.cwd()
@@ -28,6 +28,7 @@ class AgentSandbox:
         self.live = None
         self.command = command
         self.interactive = interactive
+        self.allowed_domains = allowed_domains or []
         
     def create_workspace_copy(self):
         """Create a temporary copy of the current working directory."""
@@ -99,12 +100,19 @@ class AgentSandbox:
     def start_proxy_container(self):
         """Start the proxy container."""
         
+        # Prepare environment variables for proxy
+        env_vars = {}
+        if self.allowed_domains:
+            # Join domains with commas for the environment variable
+            env_vars['ADDITIONAL_DOMAINS'] = ','.join(self.allowed_domains)
+        
         proxy_container = self.docker_client.containers.run(
             "sandbox-proxy:latest",
             name=self.proxy_container_name,
             network=self.network_name,
             detach=True,
-            auto_remove=True
+            auto_remove=True,
+            environment=env_vars
         )
         
         return proxy_container
@@ -239,6 +247,11 @@ class AgentSandbox:
                 self.ensure_network()
                 self.start_proxy_container()
                 
+                # Log additional domains if any
+                if self.allowed_domains:
+                    domains_str = ', '.join(self.allowed_domains)
+                    self.console.print(f"[yellow]→ Additional domains allowed: {domains_str}[/yellow]")
+                
                 # Complete startup
                 progress.update(startup_task, description="✓ Sandbox ready", completed=5)
                 progress.stop()
@@ -291,17 +304,25 @@ class AgentSandbox:
 @click.command()
 @click.argument('command', nargs=-1)
 @click.option('--noninteractive', is_flag=True, help='Run without interactive TTY')
-def sandbox(command, noninteractive):
+@click.option('--allow', multiple=True, help='Additional domain to allow through proxy (can be specified multiple times)')
+def sandbox(command, noninteractive, allow):
     """Launch an agent sandbox environment.
     
     COMMAND: Optional command to run in the sandbox. If not provided, launches an interactive shell.
+    
+    Examples:
+        agent-sandbox                              # Interactive shell with default whitelist
+        agent-sandbox --allow google.com           # Allow google.com in addition to defaults
+        agent-sandbox --allow google.com --allow bing.com  # Allow multiple additional domains
     """
     # Pass command as list to preserve arguments
     command_list = list(command) if command else None
     # Interactive is True by default, unless --noninteractive is set
     interactive = not noninteractive
+    # Convert tuple to list for allowed domains
+    allowed_domains = list(allow) if allow else []
     
-    sandbox = AgentSandbox(command=command_list, interactive=interactive)
+    sandbox = AgentSandbox(command=command_list, interactive=interactive, allowed_domains=allowed_domains)
     sandbox.run()
 
 
