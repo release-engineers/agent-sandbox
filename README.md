@@ -50,7 +50,7 @@ agent-sandbox
 ## Usage
 
 ```bash
-# Usage: sandbox.py [OPTIONS] [COMMAND]...
+# Usage: agent-sandbox [OPTIONS] [COMMAND]...
 #
 #   Launch an agent sandbox environment.
 #
@@ -58,24 +58,54 @@ agent-sandbox
 #   an interactive shell.
 #
 # Options:
-#   --noninteractive  Run without interactive TTY
-#   --allow DOMAIN    Allow additional domain through proxy (can be used multiple times)
-#   --help            Show this message and exit.
+#   --noninteractive              Run without interactive TTY
+#   --allow-http DOMAIN           Allow a domain through the proxy (can be used multiple times)
+#   --agent-dockerfile PATH       Path to custom agent Dockerfile
+#   --agent-dockercontext PATH    Build context directory for custom agent Dockerfile
+#   --proxy-dockerfile PATH       Path to custom proxy Dockerfile
+#   --proxy-dockercontext PATH    Build context directory for custom proxy Dockerfile
+#   --help                        Show this message and exit.
 ```
 
 Generated patch files are named `sandbox-diff-<timestamp>.patch`, and can be applied to your original working directory with `git apply`.
 
 ### Extending Proxy Whitelist
 
-By default, the sandbox proxy only allows connections to [whitelisted domains](tinyproxy-whitelist). You can extend this whitelist using the `--allow` option:
+By default, the sandbox proxy only allows connections to [whitelisted domains](tinyproxy-whitelist). You can extend this whitelist using the `--allow-http` option:
 
 ```bash
 # Allow google.com in addition to defaults
-agent-sandbox --allow google.com -- claude "help me with my code"
+agent-sandbox --allow-http google.com -- claude "help me with my code"
 
 # Allow multiple additional domains
-agent-sandbox --allow google.com --allow stackoverflow.com -- python script.py
+agent-sandbox --allow-http google.com --allow-http stackoverflow.com -- python script.py
 ```
+
+### Custom Docker Images
+
+You can provide custom Dockerfiles for both the agent and proxy containers. The original images (`sandbox-agent:latest` and `sandbox-proxy:latest`) are always built first, allowing custom Dockerfiles to extend them using `FROM sandbox-agent:latest` or `FROM sandbox-proxy:latest`.
+
+```bash
+# Use a custom agent Dockerfile
+agent-sandbox --agent-dockerfile ./custom/Dockerfile.agent -- claude "run tests"
+
+# Use custom Dockerfiles with specific build contexts
+agent-sandbox \
+  --agent-dockerfile ./docker/agent.dockerfile \
+  --agent-dockercontext ./docker/agent-context \
+  --proxy-dockerfile ./docker/proxy.dockerfile \
+  --proxy-dockercontext ./docker/proxy-context \
+  -- python script.py
+
+# Example custom agent Dockerfile that extends the base image
+# ./custom/Dockerfile.agent:
+# FROM sandbox-agent:latest
+# RUN pip install pytest mypy
+# COPY requirements.txt /tmp/
+# RUN pip install -r /tmp/requirements.txt
+```
+
+**Note**: If no context directory is specified, the parent directory of the Dockerfile is used as the build context.
 
 ## Features
 

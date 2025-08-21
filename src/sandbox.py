@@ -15,7 +15,9 @@ import click
 class AgentSandbox:
     """Manages interactive sandbox environments with copy-on-write workspaces."""
     
-    def __init__(self, command=None, interactive=True, allowed_domains=None):
+    def __init__(self, command=None, interactive=True, allowed_domains=None, 
+                 agent_dockerfile=None, agent_dockercontext=None,
+                 proxy_dockerfile=None, proxy_dockercontext=None):
         self.console = Console()
         self.docker_client = docker.from_env()
         self.cwd = Path.cwd()
@@ -29,6 +31,16 @@ class AgentSandbox:
         self.command = command
         self.interactive = interactive
         self.allowed_domains = allowed_domains or []
+        
+        # Custom Dockerfile paths and contexts
+        self.agent_dockerfile = Path(agent_dockerfile) if agent_dockerfile else None
+        self.agent_dockercontext = Path(agent_dockercontext) if agent_dockercontext else None
+        self.proxy_dockerfile = Path(proxy_dockerfile) if proxy_dockerfile else None
+        self.proxy_dockercontext = Path(proxy_dockercontext) if proxy_dockercontext else None
+        
+        # Custom image IDs (set during build)
+        self.custom_agent_image_id = None
+        self.custom_proxy_image_id = None
         
     def create_workspace_copy(self):
         """Create a temporary copy of the current working directory."""
@@ -77,7 +89,8 @@ class AgentSandbox:
     def build_images(self):
         """Build required Docker images."""
         
-        # Build agent image
+        # Always build original images first (required for FROM sandbox-agent:latest support)
+        # Build original agent image
         subprocess.run([
             "docker", "build",
             "-f", str(self.project_root / "Dockerfile.agent"),
@@ -85,13 +98,39 @@ class AgentSandbox:
             str(self.project_root)
         ], check=True)
         
-        # Build proxy image
+        # Build original proxy image
         subprocess.run([
             "docker", "build",
             "-f", str(self.project_root / "Dockerfile.proxy"),
             "-t", "sandbox-proxy:latest",
             str(self.project_root)
         ], check=True)
+        
+        # Build custom agent image if specified (without tag, capture image ID)
+        if self.agent_dockerfile:
+            context = str(self.agent_dockercontext) if self.agent_dockercontext else str(self.agent_dockerfile.parent)
+            result = subprocess.run([
+                "docker", "build",
+                "-f", str(self.agent_dockerfile),
+                "-q",  # Quiet mode to only output image ID
+                context
+            ], check=True, capture_output=True, text=True)
+            self.custom_agent_image_id = result.stdout.strip()
+        else:
+            self.custom_agent_image_id = None
+        
+        # Build custom proxy image if specified (without tag, capture image ID)
+        if self.proxy_dockerfile:
+            context = str(self.proxy_dockercontext) if self.proxy_dockercontext else str(self.proxy_dockerfile.parent)
+            result = subprocess.run([
+                "docker", "build",
+                "-f", str(self.proxy_dockerfile),
+                "-q",  # Quiet mode to only output image ID
+                context
+            ], check=True, capture_output=True, text=True)
+            self.custom_proxy_image_id = result.stdout.strip()
+        else:
+            self.custom_proxy_image_id = None
     
     def ensure_network(self):
         """Create the Docker network."""
@@ -106,8 +145,11 @@ class AgentSandbox:
             # Join domains with commas for the environment variable
             env_vars['ADDITIONAL_DOMAINS'] = ','.join(self.allowed_domains)
         
+        # Use custom proxy image ID if available, otherwise use default tagged image
+        proxy_image = self.custom_proxy_image_id if self.custom_proxy_image_id else "sandbox-proxy:latest"
+        
         proxy_container = self.docker_client.containers.run(
-            "sandbox-proxy:latest",
+            proxy_image,
             name=self.proxy_container_name,
             network=self.network_name,
             detach=True,
@@ -147,8 +189,9 @@ class AgentSandbox:
         if interactive:
             docker_cmd.extend(["--interactive", "--tty"])
         
-        # Add the image
-        docker_cmd.append("sandbox-agent:latest")
+        # Add the image (use custom image ID if available, otherwise use default tagged image)
+        agent_image = self.custom_agent_image_id if self.custom_agent_image_id else "sandbox-agent:latest"
+        docker_cmd.append(agent_image)
         
         # Add command to run
         if command:
@@ -304,25 +347,41 @@ class AgentSandbox:
 @click.command()
 @click.argument('command', nargs=-1)
 @click.option('--noninteractive', is_flag=True, help='Run without interactive TTY')
-@click.option('--allow', multiple=True, help='Additional domain to allow through proxy (can be specified multiple times)')
-def sandbox(command, noninteractive, allow):
+@click.option('--allow-http', multiple=True, help='Additional domain to allow through proxy (can be specified multiple times)')
+@click.option('--agent-dockerfile', type=click.Path(exists=True), help='Path to custom agent Dockerfile')
+@click.option('--agent-dockercontext', type=click.Path(exists=True), help='Build context directory for custom agent Dockerfile')
+@click.option('--proxy-dockerfile', type=click.Path(exists=True), help='Path to custom proxy Dockerfile')
+@click.option('--proxy-dockercontext', type=click.Path(exists=True), help='Build context directory for custom proxy Dockerfile')
+def sandbox(command, noninteractive, allow_http, agent_dockerfile, agent_dockercontext, proxy_dockerfile, proxy_dockercontext):
     """Launch an agent sandbox environment.
     
     COMMAND: Optional command to run in the sandbox. If not provided, launches an interactive shell.
     
     Examples:
         agent-sandbox                              # Interactive shell with default whitelist
-        agent-sandbox --allow google.com           # Allow google.com in addition to defaults
-        agent-sandbox --allow google.com --allow bing.com  # Allow multiple additional domains
+        agent-sandbox --allow-http google.com           # Allow google.com in addition to defaults
+        agent-sandbox --allow-http google.com --allow-http bing.com  # Allow multiple additional domains
+        agent-sandbox --agent-dockerfile ./custom/Dockerfile.agent  # Use custom agent Dockerfile
+        agent-sandbox --proxy-dockerfile ./custom/Dockerfile.proxy --proxy-dockercontext ./custom  # Custom proxy with context
+    
+    Note: Original images are always built first to support FROM sandbox-agent:latest in custom Dockerfiles.
     """
     # Pass command as list to preserve arguments
     command_list = list(command) if command else None
     # Interactive is True by default, unless --noninteractive is set
     interactive = not noninteractive
     # Convert tuple to list for allowed domains
-    allowed_domains = list(allow) if allow else []
+    allowed_domains = list(allow_http) if allow_http else []
     
-    sandbox = AgentSandbox(command=command_list, interactive=interactive, allowed_domains=allowed_domains)
+    sandbox = AgentSandbox(
+        command=command_list, 
+        interactive=interactive, 
+        allowed_domains=allowed_domains,
+        agent_dockerfile=agent_dockerfile,
+        agent_dockercontext=agent_dockercontext,
+        proxy_dockerfile=proxy_dockerfile,
+        proxy_dockercontext=proxy_dockercontext
+    )
     sandbox.run()
 
 
